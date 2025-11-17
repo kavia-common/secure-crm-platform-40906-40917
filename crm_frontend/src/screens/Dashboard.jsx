@@ -3,7 +3,7 @@ import { LineChartCard, BarChartCard } from "../components/charts/Charts";
 import { useWebSocket } from "../services/ws";
 import { eventBus } from "../services/ws";
 import { useAuth } from "../auth/AuthContext";
-import { getDemoServiceRequests } from "../services/demoStore";
+import { getDemoServiceRequests, getDemoComplaints } from "../services/demoStore";
 
 /**
  * PUBLIC_INTERFACE
@@ -24,6 +24,8 @@ export default function Dashboard() {
     { name: "Closed", value: 44 },
   ]);
   const [closedToday, setClosedToday] = useState(8);
+  const [openComplaints, setOpenComplaints] = useState(0);
+  const [createdToday, setCreatedToday] = useState(0);
 
   // Initialize status counts from demo store in demo mode so KPIs reflect seeded data immediately
   useEffect(() => {
@@ -37,6 +39,10 @@ export default function Dashboard() {
       { name: "In Progress", value: inProg },
       { name: "Closed", value: closed },
     ]);
+
+    const complaints = getDemoComplaints();
+    const cmpOpen = complaints.filter((c) => String(c.status).toLowerCase() === "open").length;
+    setOpenComplaints(cmpOpen);
   }, [dummyAuth]);
 
   // Websocket placeholder path; backend to implement in S3
@@ -69,11 +75,12 @@ export default function Dashboard() {
       setClosedToday((n) => n + 1);
     });
     const unsub2 = eventBus.on("complaint:closed", () => {
-      // Reflect in KPI minimally (Closed Today as generic completion metric)
+      // Reflect in KPI: decrement open complaints, increment closed today
+      setOpenComplaints((n) => (n > 0 ? n - 1 : 0));
       setClosedToday((n) => n + 1);
     });
     const unsub3 = eventBus.on("sr:created", () => {
-      // New SR -> increment Open count in status distribution
+      // New SR -> increment Open count in status distribution and created today
       setBar((cur) => {
         const next = cur.map((b) => ({ ...b }));
         const idxOpen = next.findIndex((b) => b.name === "Open");
@@ -81,22 +88,28 @@ export default function Dashboard() {
         else next.push({ name: "Open", value: 1 });
         return next;
       });
+      setCreatedToday((n) => n + 1);
+    });
+    const unsub4 = eventBus.on("complaint:created", () => {
+      setOpenComplaints((n) => n + 1);
+      setCreatedToday((n) => n + 1);
     });
     return () => {
       unsub1?.();
       unsub2?.();
       unsub3?.();
+      unsub4?.();
     };
   }, []);
 
   const kpis = useMemo(
     () => [
       { label: "Open SRs", value: bar.find((b) => b.name === "Open")?.value ?? 0 },
+      { label: "Open Complaints", value: openComplaints },
+      { label: "Created Today", value: createdToday },
       { label: "Closed Today", value: closedToday },
-      { label: "Avg. SLA (hrs)", value: 5.4 },
-      { label: "CSAT", value: "92%" },
     ],
-    [bar, closedToday]
+    [bar, openComplaints, createdToday, closedToday]
   );
 
   return (

@@ -436,7 +436,7 @@ export function addDemoComplaint(input) {
   ensureComplaintsLoaded();
   const now = new Date();
   const idx = (mem_complaints?.length || 0) + 1;
-  const id = `cmp-${idx}`;
+  const id = String(input?.id || `cmp-${idx}`);
   const customer_id = String(input?.customer_id || "c1");
   const item = {
     id,
@@ -489,6 +489,24 @@ export function subscribeDemoComplaints(callback) {
     return () => window.removeEventListener(DEMO_COMPLAINTS_EVENT, handler);
   }
   return () => {};
+}
+
+// PUBLIC_INTERFACE
+export function addComplaint(input) {
+  /** Generic alias for adding a complaint in demo/fallback mode. */
+  return addDemoComplaint(input);
+}
+
+// PUBLIC_INTERFACE
+export function getComplaints() {
+  /** Generic alias for reading all complaints in demo/fallback mode. */
+  return getDemoComplaints();
+}
+
+// PUBLIC_INTERFACE
+export function subscribeComplaints(cb) {
+  /** Generic alias for subscribing to complaints changes. */
+  return subscribeDemoComplaints(cb);
 }
 
 /* =========================

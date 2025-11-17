@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, Pagination, useServerTable } from "../components/data/Table";
 import { Input, Select } from "../components/forms/Controls";
@@ -7,6 +7,7 @@ import { Modal } from "../components/overlays/Overlays";
 import { eventBus } from "../services/ws";
 import { getApiClient, transitionComplaint } from "../services/apiClient";
 import { shouldUseFallback } from "../services/runtimeFlags";
+import { Button } from "../components/primitives/Button";
 
 /**
  * PUBLIC_INTERFACE
@@ -42,6 +43,12 @@ export default function ComplaintsList() {
     filter: { q: q || undefined, status: status || undefined, severity: priority || undefined, _t: reloadTick },
     fallbackKey: "complaints",
   });
+
+  // Refresh immediately when a complaint is created elsewhere in the app
+  useEffect(() => {
+    const unsub = eventBus.on("complaint:created", () => setReloadTick((x) => x + 1));
+    return () => unsub?.();
+  }, []);
 
   const rows = useMemo(() => {
     return (apiRowsRaw || []).map((r, i) => ({
@@ -140,7 +147,15 @@ export default function ComplaintsList() {
 
   return (
     <section aria-labelledby="complaints-title">
-      <h1 id="complaints-title">Complaints</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <h1 id="complaints-title" style={{ margin: 0 }}>Complaints</h1>
+        <Button
+          aria-label="Create new complaint"
+          onClick={() => navigate("/complaints/new")}
+        >
+          New Complaint
+        </Button>
+      </div>
 
       <div
         style={{

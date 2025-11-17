@@ -15,6 +15,7 @@ const SRList = lazy(() => import("../screens/ServiceRequestsList"));
 const Inbox = lazy(() => import("../screens/OmniChannelInbox"));
 const ComplaintsList = lazy(() => import("../screens/ComplaintsList"));
 const ComplaintDetail = lazy(() => import("../screens/ComplaintDetailView"));
+const ComplaintsForm = lazy(() => import("../screens/ComplaintsForm"));
 const Settings = lazy(() => import("../screens/Settings"));
 
 /**
@@ -29,6 +30,7 @@ const Settings = lazy(() => import("../screens/Settings"));
  * - /service-requests/:id → ServiceRequestDetailView
  * - /omnichannel → OmniChannelInbox
  * - /complaints → ComplaintsList
+ * - /complaints/new → ComplaintsForm
  * - /complaints/:id → ComplaintDetailView
  * - /settings → Settings
  */
@@ -58,6 +60,7 @@ export function AppRoutes() {
             <Route path="/service-requests/:id" element={<SRDetailView />} />
             <Route path="/omnichannel" element={<Inbox />} />
             <Route path="/complaints" element={<ComplaintsList />} />
+            <Route path="/complaints/new" element={<ComplaintsForm />} />
             <Route path="/complaints/:id" element={<ComplaintDetail />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
