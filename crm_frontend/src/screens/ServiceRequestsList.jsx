@@ -38,13 +38,6 @@ export default function ServiceRequestsList() {
   // Confirm dialog state
   const [confirm, setConfirm] = useState({ open: false, id: null, title: "" });
 
-  // Local rows for optimistic update/rollback in API mode
-  const [localRows, setLocalRows] = useState([]);
-  useEffect(() => {
-    // Keep in sync with source rows
-    setLocalRows(dummyAuth ? demoPageRows : apiRows);
-  }, [dummyAuth, demoPageRows, apiRows]);
-
   // Columns definition, including action column
   const columns = useMemo(
     () => [
@@ -85,9 +78,8 @@ export default function ServiceRequestsList() {
     []
   );
 
-  // DEMO MODE path
+  // DEMO MODE data: load all, then compute filtered, sorted and paginated rows
   const [demoAll, setDemoAll] = useState([]);
-
   useEffect(() => {
     if (!dummyAuth) return;
     setDemoAll(getDemoServiceRequests());
@@ -99,7 +91,9 @@ export default function ServiceRequestsList() {
     if (!dummyAuth) return [];
     let rows = Array.isArray(demoAll) ? [...demoAll] : [];
     if (statusFilter) {
-      rows = rows.filter((r) => String(r.status || "").toLowerCase() === String(statusFilter).toLowerCase());
+      rows = rows.filter(
+        (r) => String(r.status || "").toLowerCase() === String(statusFilter).toLowerCase()
+      );
     }
     if (q) {
       const term = q.toLowerCase();
@@ -130,20 +124,23 @@ export default function ServiceRequestsList() {
     return rows;
   }, [dummyAuth, demoAll, q, statusFilter, sort]);
 
+  // IMPORTANT: compute demoPageRows BEFORE any effect references it
   const demoPageRows = useMemo(() => {
     if (!dummyAuth) return [];
     const start = (page - 1) * pageSize;
     return demoFilteredSorted.slice(start, start + pageSize);
   }, [dummyAuth, demoFilteredSorted, page, pageSize]);
 
-  // API MODE path
+  // API MODE path (with fallbackKey so tests/demo avoid real network)
   const { rows: apiRowsRaw, total: apiTotal, loading: apiLoading } = useServerTable({
     path: "/service-requests",
     page,
     pageSize,
     sort,
-    filter: { status: statusFilter || undefined },
+    filter: { status: statusFilter || undefined, q: q || undefined },
+    fallbackKey: "service_requests",
   });
+
   const apiRows = useMemo(() => {
     if (dummyAuth) return [];
     // Map server payload to our columns shape defensively
@@ -156,6 +153,13 @@ export default function ServiceRequestsList() {
       created_at: r.created_at || r.createdAt || "",
     }));
   }, [apiRowsRaw, dummyAuth]);
+
+  // Local rows for optimistic update/rollback in API mode
+  const [localRows, setLocalRows] = useState([]);
+  useEffect(() => {
+    // Keep in sync with source rows
+    setLocalRows(dummyAuth ? demoPageRows : apiRows);
+  }, [dummyAuth, demoPageRows, apiRows]);
 
   // Render helpers
   const handleRowClick = (row) => {
