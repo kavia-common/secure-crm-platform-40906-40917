@@ -1,9 +1,16 @@
 .shell {
+  /* Use CSS var for dynamic sidebar width so grid adapts when collapsed */
+  --sidebar-width: 260px;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: var(--sidebar-width) 1fr;
   grid-template-rows: auto 1fr;
   height: 100%;
   background: var(--color-background);
+}
+
+/* When collapsed, shrink sidebar column to icon size */
+.shell.sidebar-closed {
+  --sidebar-width: 64px;
 }
 
 .sidebar {
@@ -12,12 +19,17 @@
   border-right: 1px solid rgba(17, 24, 39, 0.08);
   padding: var(--space-6) var(--space-4);
   box-shadow: var(--shadow-sm);
-  transition: width .2s ease, transform .2s ease;
+  overflow: hidden auto;
+  transition: transform .2s ease, width .2s ease;
 }
-.sidebar.closed {
-  width: 64px;
-  overflow: hidden;
+
+/* Reserve explicit width on desktop equal to grid column so inner layout doesn't overflow */
+@media (min-width: 769px) {
+  .sidebar {
+    width: var(--sidebar-width);
+  }
 }
+
 .brand {
   font-weight: 700;
   color: var(--color-primary);
@@ -35,16 +47,47 @@
 }
 
 .nav {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   color: var(--color-text);
   padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-sm);
   margin-bottom: var(--space-2);
+  font-weight: 600;
+  line-height: 1.2;
 }
-.nav.active {
+.nav .icon {
+  width: 22px;
+  text-align: center;
+}
+.nav .label {
+  white-space: nowrap;
+}
+.nav:hover {
   background: var(--color-secondary);
 }
+.nav:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.nav.active,
+.nav[aria-current="page"] {
+  background: var(--color-secondary);
+  box-shadow: inset 0 0 0 1px rgba(17,24,39,0.08);
+}
 
+/* Collapsed: hide labels but keep icons, provide tooltips via title attribute in markup */
+.shell.sidebar-closed .nav .label {
+  display: none;
+}
+.shell.sidebar-closed .brand a {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Content area */
 .content {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -65,6 +108,7 @@
   padding: 6px 10px;
   cursor: pointer;
 }
+.iconbtn:hover, .seg:hover { box-shadow: var(--shadow-sm); }
 .grow { flex: 1; }
 .user {
   display: inline-flex;
@@ -88,16 +132,10 @@
   overflow: auto;
 }
 
-@media (max-width: 1024px) {
-  .shell {
-    grid-template-columns: 64px 1fr;
-  }
-  .sidebar {
-    width: 64px;
-    padding: var(--space-4) var(--space-2);
-  }
+/* Mobile Drawer Mode */
+.backdrop {
+  display: none;
 }
-
 @media (max-width: 768px) {
   .shell {
     grid-template-columns: 1fr;
@@ -106,9 +144,27 @@
     position: fixed;
     z-index: 30;
     height: 100%;
+    width: 260px;
+    left: 0;
+    top: 0;
+    bottom: 0;
     transform: translateX(-100%);
+    padding: var(--space-6) var(--space-4);
   }
   .sidebar.open {
     transform: translateX(0%);
   }
+  .backdrop.show {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.35);
+    z-index: 25;
+  }
+}
+
+/* Medium screens: when grid narrows, default to compact sidebar */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .shell.sidebar-open { --sidebar-width: 200px; }
+  .shell.sidebar-closed { --sidebar-width: 64px; }
 }
