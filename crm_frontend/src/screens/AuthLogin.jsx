@@ -1,6 +1,7 @@
 import React from "react";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/primitives/Button";
+import { Input } from "../components/forms/Controls";
 import "../components/forms/base.css";
 
 /**
@@ -20,15 +21,9 @@ export default function AuthLogin() {
   return (
     <div style={{ maxWidth: 420, margin: "10vh auto", background: "var(--color-surface)", padding: 24, borderRadius: 10, boxShadow: "var(--shadow-lg)" }}>
       <h1>Sign in</h1>
-      <form onSubmit={handleLogin} aria-label="Login form">
-        <label>
-          Email
-          <input name="email" type="email" required aria-required="true" aria-label="Email" />
-        </label>
-        <label>
-          Password
-          <input name="password" type="password" required aria-required="true" aria-label="Password" />
-        </label>
+      <form onSubmit={handleLogin} aria-label="Login form" noValidate>
+        <Input label="Email" name="email" type="email" required aria-required="true" aria-label="Email" />
+        <Input label="Password" name="password" type="password" required aria-required="true" aria-label="Password" />
         <div style={{ marginTop: 12 }}>
           <Button type="submit">Login</Button>
         </div>
