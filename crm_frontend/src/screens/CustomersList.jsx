@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DataTable, Pagination, useServerTable } from "../components/data/Table";
 import { Input, Select } from "../components/forms/Controls";
 import { useToast } from "../components/feedback/Toast";
@@ -12,6 +13,7 @@ import { shouldUseFallback } from "../services/runtimeFlags";
  * - Caches probe result so subsequent loads do not call the real endpoint again this session.
  */
 export default function CustomersList() {
+  const navigate = useNavigate();
   const toast = useToast();
 
   // UI state
@@ -90,8 +92,8 @@ export default function CustomersList() {
   );
 
   const handleRowClick = (row) => {
-    const id = row?.id || "";
-    toast.push(`Customer detail (${id}) is not implemented yet.`, "info");
+    if (!row?.id) return;
+    navigate(`/customers/${encodeURIComponent(row.id)}`);
   };
 
   return (

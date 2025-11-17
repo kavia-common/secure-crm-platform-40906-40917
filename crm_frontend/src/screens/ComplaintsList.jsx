@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DataTable, Pagination, useServerTable } from "../components/data/Table";
 import { Input, Select } from "../components/forms/Controls";
 import { useAuth } from "../auth/AuthContext";
@@ -16,6 +17,7 @@ import { updateDemoComplaint } from "../services/demoStore";
  * Row click shows a toast (detail route to be implemented).
  */
 export default function ComplaintsList() {
+  const navigate = useNavigate();
   const { dummyAuth } = useAuth();
   const toast = useToast();
 
@@ -171,8 +173,8 @@ export default function ComplaintsList() {
   );
 
   const handleRowClick = (row) => {
-    const id = row?.id || "";
-    toast.push(`Complaint detail (${id}) is not implemented yet.`, "info");
+    if (!row?.id) return;
+    navigate(`/complaints/${encodeURIComponent(row.id)}`);
   };
 
   const rows = localRows;
