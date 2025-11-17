@@ -94,10 +94,40 @@ export function AuthProvider({ children, value }) {
         }
         return true;
       } catch (e) {
-        const msg =
-          e?.response?.data?.message ||
-          e?.message ||
-          "Login failed";
+        // Build a user-friendly message without exposing secrets
+        const base = api?.defaults?.baseURL || process.env.REACT_APP_API_BASE || "/api/v1";
+        const hasResponse = !!e?.response;
+        let msg;
+        if (hasResponse) {
+          const status = e.response?.status;
+          if (status === 401 || status === 403) {
+            msg = "Invalid credentials. Please check your email/username and password.";
+          } else {
+            msg = e?.response?.data?.message || `Server error (${status}). Please try again.`;
+          }
+        } else {
+          // Network error or CORS/mixed-content
+          const isHttps = typeof window !== "undefined" && window.location?.protocol === "https:";
+          const apiIsHttp = /^http:\/\//i.test(String(base));
+          const mixed = isHttps && apiIsHttp;
+          msg = mixed
+            ? "Network blocked: Frontend is HTTPS but API is HTTP. Use an HTTPS API URL or configure a dev proxy."
+            : `Network error: could not reach API at ${base}. Check REACT_APP_API_BASE, backend availability, and CORS.`;
+        }
+
+        // Console log diagnostics for developers (no secrets)
+        // eslint-disable-next-line no-console
+        console.error("Login error", {
+          code: e?.code,
+          message: e?.message,
+          baseURL: base,
+          method: e?.config?.method,
+          url: e?.config?.url,
+          status: e?.response?.status,
+          statusText: e?.response?.statusText,
+          responseData: e?.response?.data,
+        });
+
         setAuthError(msg);
         setToken(null);
         setRefreshToken(null);

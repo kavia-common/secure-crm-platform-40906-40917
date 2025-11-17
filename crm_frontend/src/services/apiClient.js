@@ -1,23 +1,77 @@
 import axios from "axios";
 
 /**
+ * Normalize base URL input:
+ * - Defaults to "/api/v1" (matches FastAPI backend OpenAPI)
+ * - Ensures single leading slash for relative paths
+ * - Trims any trailing slash
+ * - Upgrades legacy "/api" to "/api/v1"
+ */
+function normalizeBaseUrl(input) {
+  let val = (input || "/api/v1").trim();
+
+  // If not absolute URL, ensure it starts with a single "/"
+  const isAbsolute = /^https?:\/\//i.test(val);
+  if (!isAbsolute) {
+    if (!val.startsWith("/")) val = `/${val}`;
+  }
+
+  // Remove trailing slash to avoid double-slashes when joining
+  if (val.length > 1 && val.endsWith("/")) {
+    val = val.slice(0, -1);
+  }
+
+  // Upgrade legacy default to versioned API
+  if (val === "/api") {
+    val = "/api/v1";
+  }
+
+  return val;
+}
+
+/**
  * PUBLIC_INTERFACE
  * getApiClient returns a configured axios instance with auth headers and interceptors.
- * Includes optional mock layer guarded by REACT_APP_FEATURE_ENABLE_API and REACT_APP_FEATURE_ENABLE_WS.
+ * - Respects REACT_APP_API_BASE (default: "/api/v1")
+ * - Adds timeout via REACT_APP_API_TIMEOUT_MS (default: 15000ms)
+ * - Logs detailed error info for network vs HTTP errors
+ * - Detects HTTPS/HTTP mixed-content risk and warns in console
+ * - Includes optional mock layer guarded by REACT_APP_FEATURE_ENABLE_API
  */
 export function getApiClient(getToken) {
-  const baseURL = process.env.REACT_APP_API_BASE || "/api";
+  const baseURL = normalizeBaseUrl(process.env.REACT_APP_API_BASE);
   const enableApi = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
+  const timeout = Number.parseInt(process.env.REACT_APP_API_TIMEOUT_MS || "15000", 10);
+
+  // Warn if front-end is HTTPS but API base is HTTP (mixed-content will be blocked by browsers)
+  if (typeof window !== "undefined") {
+    try {
+      const isHttps = window.location?.protocol === "https:";
+      const apiIsHttp = /^http:\/\//i.test(baseURL);
+      if (isHttps && apiIsHttp) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[API] Mixed-content risk: UI is served over HTTPS but REACT_APP_API_BASE is HTTP. " +
+            "Browsers will block requests. Use an HTTPS API URL, set up a dev proxy, or use a relative path (/api/v1).",
+          { baseURL }
+        );
+      }
+    } catch {
+      // ignore env detection errors
+    }
+  }
 
   const instance = axios.create({
     baseURL,
     withCredentials: true,
+    timeout,
     headers: { "Content-Type": "application/json" },
   });
 
   instance.interceptors.request.use(async (config) => {
     const token = typeof getToken === "function" ? await getToken() : null;
     if (token) {
+      // Attach bearer token without logging it
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -26,7 +80,25 @@ export function getApiClient(getToken) {
   instance.interceptors.response.use(
     (res) => res,
     (err) => {
-      // Optionally handle global 401/403 etc.
+      // Robust logging for diagnostics without leaking sensitive data
+      const info = {
+        code: err?.code,
+        message: err?.message,
+        method: err?.config?.method,
+        baseURL: err?.config?.baseURL,
+        url: err?.config?.url,
+        status: err?.response?.status,
+        statusText: err?.response?.statusText,
+        // Keep response data for debugging if backend returns structured error
+        responseData: err?.response?.data,
+      };
+
+      // eslint-disable-next-line no-console
+      if (info.code === "ERR_NETWORK" || !err?.response) {
+        console.error("[API] Network error", info);
+      } else {
+        console.error("[API] HTTP error", info);
+      }
       return Promise.reject(err);
     }
   );

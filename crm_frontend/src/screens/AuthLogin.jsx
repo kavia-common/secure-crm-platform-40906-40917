@@ -82,7 +82,7 @@ export default function AuthLogin() {
         </div>
       </form>
       <p style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>
-        Backend auth endpoint is expected at POST {process.env.REACT_APP_API_BASE || "/api"}/auth/login
+        Backend auth endpoint is expected at POST {process.env.REACT_APP_API_BASE || "/api/v1"}/auth/login
       </p>
     </div>
   );
