@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* PUBLIC_INTERFACE
+   Global style variables and helpers
+*/
+:root {
+  --color-primary: 146 64 14;   /* #92400E */
+  --color-secondary: 254 243 199; /* #FEF3C7 */
+  --color-background: 255 251 235; /* #FFFBEB */
+  --color-surface: 255 255 255; /* #FFFFFF */
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+/* Soft brand gradient used in the main content area */
+.bg-gradient-brand {
+  background-image: linear-gradient(
+    to bottom right,
+    rgba(146, 64, 14, 0.10),
+    rgba(254, 243, 199, 0.10)
+  );
+}
