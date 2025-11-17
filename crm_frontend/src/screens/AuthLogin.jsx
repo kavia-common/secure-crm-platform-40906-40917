@@ -13,7 +13,7 @@ import { useLocation, useNavigate } from "react-router-dom";
  * AuthLogin renders login form using RHF + Zod, calls AuthContext.login and handles loading/error.
  */
 export default function AuthLogin() {
-  const { login, authLoading, authError } = useAuth();
+  const { login, authLoading, authError, dummyAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/dashboard";
@@ -45,11 +45,32 @@ export default function AuthLogin() {
   return (
     <div style={{ maxWidth: 420, margin: "10vh auto", background: "var(--color-surface)", padding: 24, borderRadius: 10, boxShadow: "var(--shadow-lg)" }}>
       <h1>Sign in</h1>
+
+      {dummyAuth ? (
+        <div
+          role="note"
+          aria-live="polite"
+          style={{
+            marginTop: 8,
+            marginBottom: 8,
+            fontSize: 12,
+            background: "var(--color-secondary)",
+            color: "var(--color-text)",
+            border: "1px dashed rgba(17,24,39,.2)",
+            borderRadius: 8,
+            padding: "8px 10px",
+          }}
+        >
+          Dummy auth mode is ON. Any email and password will sign in. To use real backend auth, set REACT_APP_FEATURE_DUMMY_AUTH=false.
+        </div>
+      ) : null}
+
       {authError ? (
         <div role="alert" style={{ color: "var(--color-error)", marginTop: 8, marginBottom: 8 }}>
           {authError}
         </div>
       ) : null}
+
       <form onSubmit={handleSubmit(onSubmit)} aria-label="Login form" noValidate>
         <Input
           label="Email"
@@ -81,9 +102,16 @@ export default function AuthLogin() {
           </span>
         </div>
       </form>
-      <p style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>
-        Backend auth endpoint is expected at POST {process.env.REACT_APP_API_BASE || "/api/v1"}/auth/login
-      </p>
+
+      {!dummyAuth ? (
+        <p style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>
+          Backend auth endpoint is expected at POST {process.env.REACT_APP_API_BASE || "/api/v1"}/auth/login
+        </p>
+      ) : (
+        <p style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>
+          Dummy auth bypasses backend calls to /auth/login and /auth/me.
+        </p>
+      )}
     </div>
   );
 }

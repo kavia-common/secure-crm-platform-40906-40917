@@ -4,12 +4,17 @@ import { configureApiAuth, getApiClient } from "../services/apiClient";
 
 const AuthCtx = createContext(null);
 
+// Feature flag: Dummy auth mode (DEV/DEMO ONLY).
+// Set REACT_APP_FEATURE_DUMMY_AUTH=false to use real backend auth.
+const DUMMY_AUTH = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH || "false") === "true";
+
 /**
  * PUBLIC_INTERFACE
  * AuthProvider provides auth state: user, token, login/logout with API + localStorage persistence.
  */
 export function AuthProvider({ children, value }) {
   const navigate = useNavigate?.() || null;
+
   const [token, setToken] = useState(() => {
     try {
       return localStorage.getItem("auth_access_token");
@@ -48,10 +53,13 @@ export function AuthProvider({ children, value }) {
         if (typeof refresh_token !== "undefined") setRefreshToken(refresh_token);
       },
       onLogout: async () => {
-        try {
-          await api.post("/auth/logout");
-        } catch {
-          // ignore
+        // In dummy auth mode we never call backend for auth endpoints.
+        if (!DUMMY_AUTH) {
+          try {
+            await api.post("/auth/logout");
+          } catch {
+            // ignore
+          }
         }
         setToken(null);
         setRefreshToken(null);
@@ -96,6 +104,21 @@ export function AuthProvider({ children, value }) {
       setAuthError(null);
       setAuthLoading(true);
       try {
+        // DUMMY AUTH: Accept any credentials, create mock token/user, and skip network completely.
+        if (DUMMY_AUTH) {
+          const fakeToken = "dummy-token";
+          setToken(fakeToken);
+          setRefreshToken(null);
+          // Derive a friendly name from email/username for demo
+          const name =
+            (emailOrUsername || "")
+              .split("@")[0]
+              .replace(/[^a-z0-9]+/gi, " ")
+              .trim() || "Demo User";
+          setUser({ id: "dummy", email: emailOrUsername, name, roles: ["user"] });
+          return true;
+        }
+
         const enableApi = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
         if (enableApi) {
           // backend spec: POST /api/v1/auth/login with {username,password}
@@ -110,7 +133,7 @@ export function AuthProvider({ children, value }) {
           setRefreshToken(refresh || null);
           await fetchProfile();
         } else {
-          // Mocked login path: generate local tokens
+          // Mocked login path: generate local tokens (API disabled globally)
           const fakeToken = btoa(`${emailOrUsername}:${Date.now()}`);
           setToken(fakeToken);
           setRefreshToken(null);
@@ -165,10 +188,13 @@ export function AuthProvider({ children, value }) {
   );
 
   const logout = useCallback(async () => {
-    try {
-      await api.post("/auth/logout");
-    } catch {
-      // ignore
+    // In dummy auth mode we never call backend for auth endpoints.
+    if (!DUMMY_AUTH) {
+      try {
+        await api.post("/auth/logout");
+      } catch {
+        // ignore
+      }
     }
     setToken(null);
     setRefreshToken(null);
@@ -187,7 +213,10 @@ export function AuthProvider({ children, value }) {
       login,
       logout,
       getToken,
+      // Expose theme controls that are injected via AppProviders
       ...value,
+      // Helpful flag for UI to show indicators
+      dummyAuth: DUMMY_AUTH,
     }),
     [user, token, refreshToken, authLoading, authError, login, logout, getToken, value]
   );

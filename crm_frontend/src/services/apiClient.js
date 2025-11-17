@@ -146,11 +146,15 @@ async function enqueueRefresh(baseURL) {
  * - Logs detailed error info for network vs HTTP errors
  * - Detects HTTPS/HTTP mixed-content risk and warns in console
  * - Includes optional mock layer guarded by REACT_APP_FEATURE_ENABLE_API
+ * - NEW: If REACT_APP_FEATURE_DUMMY_AUTH=true, auth endpoints (/auth/login, /auth/logout, /auth/me)
+ *        are short-circuited to avoid any network calls (DEV/DEMO ONLY).
  */
 export function getApiClient(getToken) {
   const baseURL = normalizeBaseUrl(process.env.REACT_APP_API_BASE);
   const enableApi = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
   const timeout = Number.parseInt(process.env.REACT_APP_API_TIMEOUT_MS || "15000", 10);
+  // Dummy auth flag
+  const dummyAuth = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH || "false") === "true";
 
   // Info log for quick diagnostics
   // eslint-disable-next-line no-console
@@ -242,42 +246,86 @@ export function getApiClient(getToken) {
     }
   );
 
-  if (!enableApi) {
-    // Lightweight mock shim for common endpoints so UI continues to function offline.
-    instance.get = async (path, { params } = {}) => {
-      if (path === "/customers") {
-        const page = Number(params?.page || 1);
-        const pageSize = Number(params?.page_size || 10);
-        const q = (params?.q || "").toLowerCase();
-        const all = mockCustomers();
-        const filtered = q ? all.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)) : all;
-        const start = (page - 1) * pageSize;
-        const items = filtered.slice(start, start + pageSize);
-        return { data: { items, total: filtered.length } };
-      }
-      if (path === "/complaints") {
-        const page = Number(params?.page || 1);
-        const pageSize = Number(params?.page_size || 10);
-        const all = mockComplaints();
-        const start = (page - 1) * pageSize;
-        const items = all.slice(start, start + pageSize);
-        return { data: { items, total: all.length } };
-      }
-      if (path === "/auth/me") {
-        return { data: { id: "u1", username: "demo", email: "demo@example.com", roles: ["user"] } };
-      }
-      // Fallback mock
-      return { data: { items: [], total: 0 } };
-    };
-    instance.post = async (path, body) => {
-      if (path === "/service-requests") {
-        return { data: { id: String(Math.floor(Math.random() * 10000)), ...body, status: "Open" } };
-      }
+  // --- Mock layer setup (for non-auth endpoints or full offline) ---
+
+  // Build mock GET/POST handlers used when REACT_APP_FEATURE_ENABLE_API=false
+  const mockGet = async (path, { params } = {}) => {
+    if (path === "/customers") {
+      const page = Number(params?.page || 1);
+      const pageSize = Number(params?.page_size || 10);
+      const q = (params?.q || "").toLowerCase();
+      const all = mockCustomers();
+      const filtered = q ? all.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)) : all;
+      const start = (page - 1) * pageSize;
+      const items = filtered.slice(start, start + pageSize);
+      return { data: { items, total: filtered.length } };
+    }
+    if (path === "/complaints") {
+      const page = Number(params?.page || 1);
+      const pageSize = Number(params?.page_size || 10);
+      const all = mockComplaints();
+      const start = (page - 1) * pageSize;
+      const items = all.slice(start, start + pageSize);
+      return { data: { items, total: all.length } };
+    }
+    if (path === "/auth/me") {
+      // When API mocks are enabled, return a demo user
+      return { data: { id: "u1", username: "demo", email: "demo@example.com", roles: ["user"] } };
+    }
+    // Fallback mock
+    return { data: { items: [], total: 0 } };
+  };
+
+  const mockPost = async (path, body) => {
+    if (path === "/service-requests") {
+      return { data: { id: String(Math.floor(Math.random() * 10000)), ...body, status: "Open" } };
+    }
+    if (path === "/auth/login") {
+      return {
+        data: {
+          access_token: btoa(`mock.${Date.now()}`),
+          refresh_token: btoa(`refresh.${Date.now()}`),
+          token_type: "bearer",
+        },
+      };
+    }
+    if (path === "/auth/logout") {
+      return { data: { ok: true } };
+    }
+    return { data: { ok: true } };
+  };
+
+  // Keep references to real axios methods
+  const realGet = instance.get.bind(instance);
+  const realPost = instance.post.bind(instance);
+
+  // Select underlying implementation based on API enable flag
+  const getImpl = enableApi ? realGet : mockGet;
+  const postImpl = enableApi ? realPost : mockPost;
+
+  // Wrap GET/POST to intercept auth endpoints when dummy auth is enabled.
+  instance.get = async (path, configOrParams) => {
+    if (dummyAuth && path === "/auth/me") {
+      // DEV/DEMO ONLY: return a static user and avoid any network call
+      return { data: { id: "u1", username: "demo", email: "demo@example.com", roles: ["user"] } };
+    }
+    // Delegate to selected implementation
+    // axios.get(path, config) uses config.params; mockGet expects ({params})
+    if (getImpl === mockGet) {
+      const params = (configOrParams && configOrParams.params) || undefined;
+      return mockGet(path, { params });
+    }
+    return realGet(path, configOrParams);
+  };
+
+  instance.post = async (path, body, config) => {
+    if (dummyAuth && (path === "/auth/login" || path === "/auth/logout")) {
+      // DEV/DEMO ONLY: short-circuit auth endpoints (no network)
       if (path === "/auth/login") {
         return {
           data: {
-            access_token: btoa(`mock.${Date.now()}`),
-            refresh_token: btoa(`refresh.${Date.now()}`),
+            access_token: "dummy-token",
+            refresh_token: null,
             token_type: "bearer",
           },
         };
@@ -285,9 +333,12 @@ export function getApiClient(getToken) {
       if (path === "/auth/logout") {
         return { data: { ok: true } };
       }
-      return { data: { ok: true } };
-    };
-  }
+    }
+    if (postImpl === mockPost) {
+      return mockPost(path, body);
+    }
+    return realPost(path, body, config);
+  };
 
   return instance;
 }
