@@ -131,10 +131,13 @@ Active route receives:
 
 ### Grid Layout
 ```css
-.shell {
+.app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
-  grid-template-areas: "sidebar content";
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main";
 }
 ```
 
@@ -147,11 +150,10 @@ Active route receives:
 
 ### Z-Index Hierarchy
 ```
-40 ← Sidebar drawer (mobile)
-30 ← Backdrop (mobile)
-20 ← Sidebar (desktop/tablet)
-15 ← Top bar
-10 ← Content area
+40 ← Overlay backdrop (mobile, offset to right of drawer)
+30 ← Sidebar (drawer in mobile)
+20 ← Top bar (sticky)
+0  ← Content area (main)
 ```
 
 ---

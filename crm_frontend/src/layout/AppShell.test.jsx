@@ -99,7 +99,14 @@ describe("AppShell Navigation Sidebar", () => {
     });
   });
 
-  test("ESC key closes the sidebar and returns focus", async () => {
+  test("ESC key closes the sidebar and returns focus (mobile only)", async () => {
+    // Ensure mobile viewport
+    Object.defineProperty(window, "innerWidth", {
+      writable: true,
+      configurable: true,
+      value: 375,
+    });
+
     render(
       <Wrapper>
         <AppShell>
@@ -108,12 +115,17 @@ describe("AppShell Navigation Sidebar", () => {
       </Wrapper>
     );
 
-    const toggleBtn = await screen.findByRole("button", { name: /collapse sidebar/i });
+    const toggleBtn = await screen.findByRole("button", { name: /expand sidebar|collapse sidebar/i });
     
-    // Ensure sidebar is open
-    expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+    // Open drawer first if collapsed by default
+    if (toggleBtn.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(toggleBtn);
+      await waitFor(() => {
+        expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+      });
+    }
 
-    // Press ESC key
+    // Press ESC key to close
     fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
 
     await waitFor(() => {

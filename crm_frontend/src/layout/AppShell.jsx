@@ -7,17 +7,13 @@ import "./appshell.css";
 /**
  * PUBLIC_INTERFACE
  * AppShell renders layout chrome: Sidebar, TopBar, main content.
- * Enhancements:
- * - Active route highlighting via NavLink isActive and aria-current
- * - Collapse/expand with persisted state (localStorage: ui_sidebar_collapsed)
- * - Responsive mobile drawer with overlay and ESC to close
- * - Keyboard accessibility (Enter/Space for toggle, Tab navigation, ESC closes drawer)
- * - Focus management when opening/closing drawer
- * - All menu items point to real routes matching Routes.jsx
- * - Proper ARIA attributes for screen readers
- * - Styles aligned with theme.css tokens
- * - Data attributes for CSS targeting: data-collapsed, data-drawer
- * - Window resize handler to update layout mode
+ * - Grid layout with explicit areas: header(topbar), sidebar, main
+ * - Data attributes for CSS targeting: data-viewport, data-collapsed, data-drawer
+ * - Sticky topbar; sticky sidebar on tablet/desktop; fixed drawer on mobile
+ * - Overlay and z-index: overlay(40) > sidebar(30 in drawer) > topbar(20) > content(0)
+ * - Responsive breakpoints: mobile <640px (drawer), tablet 640–1023px (inline collapsible), desktop ≥1024px
+ * - Collapsed state persisted per viewport mode in localStorage
+ * - Keyboard accessibility (Enter/Space toggle, ESC closes on mobile) and focus management
  */
 export function AppShell({ children }) {
   const { logout, user, theme, setTheme, dummyAuth } = useAuth();
@@ -26,55 +22,75 @@ export function AppShell({ children }) {
   const toggleBtnRef = useRef(null);
   const lastFocusRef = useRef(null);
 
-  // Detect current viewport mode
-  const [viewportMode, setViewportMode] = useState(() => {
+  const getViewportMode = () => {
     if (typeof window === "undefined") return "desktop";
     const w = window.innerWidth;
     if (w < 640) return "mobile";
     if (w < 1024) return "tablet";
     return "desktop";
+  };
+
+  const collapsedKeyForMode = (mode) => `ui_sidebar_collapsed_${mode}`;
+
+  // Determine initial viewport mode and collapsed state (allow SSR)
+  const initialMode = getViewportMode();
+  const [viewportMode, setViewportMode] = useState(initialMode);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const persisted = localStorage.getItem(collapsedKeyForMode(initialMode));
+      if (persisted !== null) return persisted === "1";
+    } catch {
+      // ignore storage read failures
+    }
+    return initialMode === "mobile"; // default collapsed on mobile
   });
 
-  // Determine initial collapsed state: prefer persisted value
-  const initialCollapsed = useMemo(() => {
-    try {
-      const persisted = localStorage.getItem("ui_sidebar_collapsed");
-      if (persisted !== null) return persisted === "1";
-      // Default: collapsed on mobile, expanded on tablet/desktop
-      return viewportMode === "mobile";
-    } catch {
-      return false;
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [collapsed, setCollapsed] = useState(initialCollapsed);
-
-  // Persist collapsed state (dual-key for backward compatibility)
+  // Persist collapsed state (per-viewport) and keep legacy keys updated
   useEffect(() => {
     try {
+      localStorage.setItem(
+        collapsedKeyForMode(viewportMode),
+        collapsed ? "1" : "0"
+      );
+      // Legacy keys: maintain for backward compatibility
       localStorage.setItem("ui_sidebar_collapsed", collapsed ? "1" : "0");
-      // Legacy key expected by some tests/docs: ui_sidebar_open
       localStorage.setItem("ui_sidebar_open", collapsed ? "0" : "1");
     } catch {
       // ignore storage failures
     }
-  }, [collapsed]);
+  }, [collapsed, viewportMode]);
 
   // Handle window resize to update viewport mode
   useEffect(() => {
     const handleResize = () => {
-      const w = window.innerWidth;
-      let mode = "desktop";
-      if (w < 640) mode = "mobile";
-      else if (w < 1024) mode = "tablet";
-      setViewportMode(mode);
+      setViewportMode(getViewportMode());
     };
-
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close the mobile drawer on route change (mobile only)
+  // Also recalibrate viewport mode on route change (for consistency)
+  useEffect(() => {
+    setViewportMode(getViewportMode());
+  }, [location.pathname]);
+
+  // When viewport mode changes, adopt persisted state for that mode (or default)
+  useEffect(() => {
+    try {
+      const persisted = localStorage.getItem(collapsedKeyForMode(viewportMode));
+      if (persisted !== null) {
+        setCollapsed(persisted === "1");
+      } else {
+        setCollapsed(viewportMode === "mobile");
+      }
+    } catch {
+      setCollapsed(viewportMode === "mobile");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportMode]);
+
+  // Close the mobile drawer on route change
   useEffect(() => {
     if (viewportMode === "mobile" && !collapsed) {
       setCollapsed(true);
@@ -83,14 +99,14 @@ export function AppShell({ children }) {
         setTimeout(() => toggleBtnRef.current?.focus(), 100);
       }
     }
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
-  // ESC to close drawer (mainly for mobile)
+  // ESC to close drawer on mobile
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape" && !collapsed && viewportMode === "mobile") {
         setCollapsed(true);
-        // Return focus to toggle button
         if (toggleBtnRef.current) {
           toggleBtnRef.current.focus();
         }
@@ -103,13 +119,13 @@ export function AppShell({ children }) {
   const toggleSidebar = () => {
     const newCollapsed = !collapsed;
     setCollapsed(newCollapsed);
-    
+
     // Focus management
     if (!newCollapsed && viewportMode === "mobile") {
       // When opening on mobile, store the current focus and move focus to first nav link
       lastFocusRef.current = document.activeElement;
       setTimeout(() => {
-        const firstNavLink = sidebarRef.current?.querySelector('a[href]');
+        const firstNavLink = sidebarRef.current?.querySelector("a[href]");
         if (firstNavLink) firstNavLink.focus();
       }, 100);
     } else if (newCollapsed && toggleBtnRef.current) {
@@ -118,8 +134,7 @@ export function AppShell({ children }) {
     }
   };
 
-  // Primary nav items with icons (emoji placeholders to avoid external deps)
-  // All paths now match Routes.jsx exactly
+  // Navigation items
   const navItems = useMemo(
     () => [
       { to: "/dashboard", label: "Dashboard", icon: "📊", exact: true },
@@ -132,17 +147,16 @@ export function AppShell({ children }) {
     []
   );
 
-  // Determine if drawer mode (mobile with overlay)
   const isDrawerMode = viewportMode === "mobile";
 
   return (
     <div
-      className={clsx("shell")}
+      className={clsx("app-shell")}
       data-collapsed={collapsed ? "true" : "false"}
       data-drawer={isDrawerMode ? "true" : "false"}
       data-viewport={viewportMode}
     >
-      {/* Mobile backdrop for drawer mode */}
+      {/* Mobile backdrop for drawer mode (does not cover sidebar area when open) */}
       {isDrawerMode && (
         <div
           className={clsx("backdrop", !collapsed && "show")}
@@ -157,7 +171,7 @@ export function AppShell({ children }) {
         />
       )}
 
-      {/* Topbar occupies its own grid row (no overlap with main) */}
+      {/* Topbar occupies its own grid row */}
       <header className="topbar" role="banner">
         <button
           ref={toggleBtnRef}
@@ -235,7 +249,6 @@ export function AppShell({ children }) {
               title={item.label}
               aria-label={item.label}
               className={({ isActive }) => clsx("nav", isActive && "active")}
-              aria-current={({ isActive }) => (isActive ? "page" : undefined)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
