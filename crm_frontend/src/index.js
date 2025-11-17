@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import './app/theme.css';
 import App from './App.jsx';
+import { logConnectivityDiagnostics } from './services/apiClient';
+
+logConnectivityDiagnostics();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

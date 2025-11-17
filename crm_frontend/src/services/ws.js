@@ -1,5 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
+function computeWsBase() {
+  const env = process.env.REACT_APP_WS_URL && String(process.env.REACT_APP_WS_URL).trim();
+  if (env) return env;
+
+  if (typeof window === "undefined") return "ws://localhost:3001";
+
+  const loc = window.location;
+  const isHttps = loc.protocol === "https:";
+  const scheme = isHttps ? "wss" : "ws";
+  const host = loc.hostname;
+  let port = loc.port;
+
+  // Dev mapping: 3000 -> 3001 for backend
+  if (port === "3000") port = "3001";
+
+  return `${scheme}://${host}${port ? `:${port}` : ""}`;
+}
+
 /**
  * PUBLIC_INTERFACE
  * useWebSocket provides a resilient websocket connection with exponential backoff, token handling.
@@ -65,8 +83,11 @@ export function useWebSocket(path, getToken) {
       }
 
       const token = typeof getToken === "function" ? await getToken() : null;
-      const base = process.env.REACT_APP_WS_URL || "";
+      const base = computeWsBase();
       const url = `${base}${path}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+
+      // eslint-disable-next-line no-console
+      console.info("[WS] Using base:", base, "path:", path);
 
       setStatus("connecting");
       try {
