@@ -119,8 +119,9 @@ export function DataTable({ columns, rows, sort, onSortChange, loading, emptyTex
                   userSelect: "none",
                 }}
                 aria-sort={
-                  sort?.key === c.key ? (sort.dir === "desc" ? "descending" : "ascending") : "none"
+                  sort?.key === c.key ? (sort.dir === "desc" ? "descending" : "ascending") : undefined
                 }
+                aria-label={c.sortable ? `${c.header} column, ${sort?.key === c.key ? sort.dir : "sortable"}` : c.header}
               >
                 {c.header}
                 {c.sortable && sort?.key === c.key ? (sort.dir === "asc" ? " ▲" : " ▼") : null}

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "../auth/AuthContext";
-import { ToastArea } from "../components/feedback/Toast";
+import { ToastProvider } from "../components/feedback/Toast";
 import "./theme.css";
 
 /**
@@ -33,8 +33,7 @@ export function AppProviders({ children }) {
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
         <AuthProvider value={{ theme, setTheme }}>
-          {children}
-          <ToastArea />
+          <ToastProvider>{children}</ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     </BrowserRouter>

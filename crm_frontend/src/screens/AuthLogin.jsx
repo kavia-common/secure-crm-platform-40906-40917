@@ -22,7 +22,7 @@ export default function AuthLogin() {
     <div style={{ maxWidth: 420, margin: "10vh auto", background: "var(--color-surface)", padding: 24, borderRadius: 10, boxShadow: "var(--shadow-lg)" }}>
       <h1>Sign in</h1>
       <form onSubmit={handleLogin} aria-label="Login form" noValidate>
-        <Input label="Email" name="email" type="email" required aria-required="true" aria-label="Email" />
+        <Input label="Email" name="email" type="email" required aria-required="true" aria-label="Email" autoFocus />
         <Input label="Password" name="password" type="password" required aria-required="true" aria-label="Password" />
         <div style={{ marginTop: 12 }}>
           <Button type="submit">Login</Button>

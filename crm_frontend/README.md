@@ -10,11 +10,16 @@ React application implementing CRM UI with a lightweight component library, RHF 
 
 ## Environment
 
-Create `.env` with:
+Create `.env` (see `.env.example`) with:
 - REACT_APP_API_BASE=/api
 - REACT_APP_WS_URL=ws://localhost:3001
+- REACT_APP_FEATURE_ENABLE_API=true
+- REACT_APP_FEATURE_ENABLE_WS=true
 
-See `.env.example` in repo root of the overall project for patterns if present. Do not commit secrets.
+When `REACT_APP_FEATURE_ENABLE_API=false`, HTTP requests are served by local mocks so UI works without backend.
+When `REACT_APP_FEATURE_ENABLE_WS=false`, the WebSocket hook emits mock messages periodically.
+
+Do not commit secrets.
 
 ## Components Overview
 
@@ -22,7 +27,7 @@ See `.env.example` in repo root of the overall project for patterns if present. 
 - Overlays: `Modal`, `Drawer` (src/components/overlays/Overlays.jsx)
 - Data: `DataTable`, `Pagination`, `useServerTable` (src/components/data/Table.jsx)
 - Primitives: `Button`, `Tabs`, `Badge`, `Avatar`, `StatusPill`
-- Feedback: `ToastArea` / `useToast`
+- Feedback: `ToastProvider` / `ToastArea` / `useToast`
 - Charts: `LineChartCard`, `BarChartCard` (Recharts)
 
 Example:

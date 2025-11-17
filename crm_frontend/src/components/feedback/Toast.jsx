@@ -42,3 +42,17 @@ export function ToastArea() {
     </ToastCtx.Provider>
   );
 }
+
+/**
+ * PUBLIC_INTERFACE
+ * ToastProvider alias to mount ToastArea within other providers.
+ */
+export function ToastProvider({ children }) {
+  // We render children and ToastArea to make toasts globally available
+  return (
+    <>
+      {children}
+      <ToastArea />
+    </>
+  );
+}
