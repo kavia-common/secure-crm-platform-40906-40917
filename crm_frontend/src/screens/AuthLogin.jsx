@@ -65,7 +65,7 @@ export default function AuthLogin() {
         </div>
       ) : null}
 
-      {authError ? (
+      {!dummyAuth && authError ? (
         <div role="alert" style={{ color: "var(--color-error)", marginTop: 8, marginBottom: 8 }}>
           {authError}
         </div>

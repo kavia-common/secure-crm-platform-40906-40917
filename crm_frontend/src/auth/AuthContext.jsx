@@ -5,8 +5,8 @@ import { configureApiAuth, getApiClient } from "../services/apiClient";
 const AuthCtx = createContext(null);
 
 // Feature flag: Dummy auth mode (DEV/DEMO ONLY).
-// Set REACT_APP_FEATURE_DUMMY_AUTH=false to use real backend auth.
-const DUMMY_AUTH = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH || "false") === "true";
+// On by default. Set REACT_APP_FEATURE_DUMMY_AUTH=false to use real backend auth.
+export const DUMMY_AUTH = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH ?? "true") === "true";
 
 /**
  * PUBLIC_INTERFACE
@@ -65,7 +65,7 @@ export function AuthProvider({ children, value }) {
         setRefreshToken(null);
         setUser(null);
         setAuthError(null);
-        if (navigate) navigate("/login", { replace: true });
+        if (navigate) navigate("/dashboard", { replace: true });
       },
     });
   }, [api, token, refreshToken, navigate]);
@@ -89,6 +89,17 @@ export function AuthProvider({ children, value }) {
       else localStorage.removeItem("auth_user");
     } catch {}
   }, [user]);
+
+  // Auto sign-in in DEMO mode to skip login page entirely.
+  useEffect(() => {
+    if (DUMMY_AUTH && !token && !user && !authLoading) {
+      const email = "demo@example.com";
+      const name = "Demo User";
+      setToken("dummy-token");
+      setRefreshToken(null);
+      setUser({ id: "dummy", email, name, roles: ["user"] });
+    }
+  }, [token, user, authLoading]);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -200,7 +211,7 @@ export function AuthProvider({ children, value }) {
     setRefreshToken(null);
     setUser(null);
     setAuthError(null);
-    if (navigate) navigate("/login", { replace: true });
+    if (navigate) navigate("/dashboard", { replace: true });
   }, [api, navigate]);
 
   const ctx = useMemo(
@@ -239,8 +250,9 @@ export function useAuth() {
  * ProtectedRoute redirects to /login when not authenticated.
  */
 export function ProtectedRoute() {
-  const { token } = useAuth();
+  const { token, dummyAuth } = useAuth();
   const location = useLocation();
+  if (dummyAuth) return <Outlet />;
   if (!token) return <Navigate to="/login" replace state={{ from: location }} />;
   return <Outlet />;
 }

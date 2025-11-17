@@ -8,7 +8,7 @@ import "./appshell.css";
  * AppShell renders layout chrome: Sidebar, TopBar, main content.
  */
 export function AppShell({ children }) {
-  const { logout, user, theme, setTheme } = useAuth();
+  const { logout, user, theme, setTheme, dummyAuth } = useAuth();
   const [open, setOpen] = useState(true);
 
   return (
@@ -43,6 +43,25 @@ export function AppShell({ children }) {
           >
             {theme === "light" ? "🌙" : "☀️"}
           </button>
+          {dummyAuth ? (
+            <span
+              aria-label="Demo mode indicator"
+              title="Demo mode: authentication is mocked"
+              style={{
+                marginLeft: 8,
+                marginRight: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "var(--color-secondary)",
+                color: "var(--color-primary)",
+                border: "1px dashed rgba(17,24,39,.2)",
+              }}
+            >
+              Demo mode
+            </span>
+          ) : null}
           <div className="user" role="group" aria-label="User">
             <span className="avatar" aria-hidden="true">{user?.name?.[0] || "U"}</span>
             <span aria-label="User name">{user?.name || "Unknown"}</span>

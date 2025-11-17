@@ -153,8 +153,8 @@ export function getApiClient(getToken) {
   const baseURL = normalizeBaseUrl(process.env.REACT_APP_API_BASE);
   const enableApi = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
   const timeout = Number.parseInt(process.env.REACT_APP_API_TIMEOUT_MS || "15000", 10);
-  // Dummy auth flag
-  const dummyAuth = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH || "false") === "true";
+  // Dummy auth flag (default ON)
+  const dummyAuth = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH ?? "true") === "true";
 
   // Info log for quick diagnostics
   // eslint-disable-next-line no-console

@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
-import { ProtectedRoute } from "../auth/AuthContext";
+import { ProtectedRoute, DUMMY_AUTH } from "../auth/AuthContext";
 import { AppShell } from "../layout/AppShell";
 
 const Login = lazy(() => import("../screens/AuthLogin"));
@@ -20,7 +20,11 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        {DUMMY_AUTH ? (
+          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+        ) : (
+          <Route path="/login" element={<Login />} />
+        )}
         <Route element={<ProtectedRoute />}>
           <Route
             element={
