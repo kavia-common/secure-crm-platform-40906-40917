@@ -24,12 +24,12 @@ export function AppShell({ children }) {
   const toggleBtnRef = useRef(null);
   const lastFocusRef = useRef(null);
 
-  // Determine initial open state: prefer persisted value; if none, closed on mobile, open on desktop.
+  // Determine initial open state: prefer persisted value; if none, closed on mobile (<640px), open on desktop/tablet.
   const initialOpen = useMemo(() => {
     try {
       const persisted = localStorage.getItem("ui_sidebar_open");
       if (persisted !== null) return persisted === "1";
-      if (typeof window !== "undefined") return window.innerWidth >= 768;
+      if (typeof window !== "undefined") return window.innerWidth >= 640;
       return true;
     } catch {
       return true;
@@ -47,9 +47,9 @@ export function AppShell({ children }) {
     }
   }, [open]);
 
-  // Close the mobile drawer on route change
+  // Close the mobile drawer on route change (mobile: <640px)
   useEffect(() => {
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
     if (open && isMobile) {
       setOpen(false);
       // Return focus to toggle button after closing on mobile

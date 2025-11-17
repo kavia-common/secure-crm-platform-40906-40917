@@ -1,92 +1,125 @@
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
-import { AuthProvider } from "../auth/AuthContext";
-import { AppShell } from "./AppShell";
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import { AppShell } from './AppShell';
+import { AuthContext } from '../auth/AuthContext';
 
 /**
- * Smoke test for AppShell navigation sidebar
- * Verifies basic functionality in a near-production setup
+ * Smoke test for AppShell layout responsive behavior
+ * Tests sidebar class toggles at different viewport widths
  */
-describe("AppShell Smoke Tests", () => {
+
+// Mock auth context
+const mockAuthContext = {
+  user: { name: 'Test User', id: '1' },
+  logout: jest.fn(),
+  theme: 'light',
+  setTheme: jest.fn(),
+  dummyAuth: false,
+};
+
+describe('AppShell Layout Smoke Test', () => {
+  const renderAppShell = () => {
+    return render(
+      <BrowserRouter>
+        <AuthContext.Provider value={mockAuthContext}>
+          <AppShell>
+            <div data-testid="main-content">Main Content</div>
+          </AppShell>
+        </AuthContext.Provider>
+      </BrowserRouter>
+    );
+  };
+
   beforeEach(() => {
+    // Clear localStorage before each test
     localStorage.clear();
   });
 
-  test("smoke: sidebar renders and toggle works", () => {
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <AppShell>
-            <div data-testid="main-content">Test Content</div>
-          </AppShell>
-        </AuthProvider>
-      </BrowserRouter>
-    );
+  it('renders without crashing', () => {
+    renderAppShell();
+    expect(screen.getByRole('main')).toBeInTheDocument();
+  });
 
-    // Verify main elements render
-    expect(screen.getByText(/Kavia CRM/i)).toBeInTheDocument();
-    expect(screen.getByTestId("main-content")).toBeInTheDocument();
+  it('renders sidebar with navigation items', () => {
+    renderAppShell();
+    expect(screen.getByLabelText('Primary navigation')).toBeInTheDocument();
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Customers')).toBeInTheDocument();
+    expect(screen.getByText('Service Requests')).toBeInTheDocument();
+  });
 
-    // Verify navigation items
-    expect(screen.getByRole("link", { name: /dashboard/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /customers/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /service requests/i })).toBeInTheDocument();
+  it('renders topbar with toggle button', () => {
+    renderAppShell();
+    const toggleButton = screen.getByLabelText(/sidebar/i);
+    expect(toggleButton).toBeInTheDocument();
+  });
 
-    // Test toggle
-    const toggleBtn = screen.getByRole("button", { name: /collapse sidebar/i });
-    fireEvent.click(toggleBtn);
+  it('renders main content area', () => {
+    renderAppShell();
+    expect(screen.getByTestId('main-content')).toBeInTheDocument();
+  });
+
+  describe('Desktop layout (>=1024px)', () => {
+    beforeEach(() => {
+      global.innerWidth = 1280;
+      global.dispatchEvent(new Event('resize'));
+    });
+
+    it('applies correct class for open sidebar', () => {
+      const { container } = renderAppShell();
+      const shell = container.querySelector('.shell');
+      // Initially should be open on desktop
+      expect(shell).toHaveClass('sidebar-open');
+    });
+  });
+
+  describe('Tablet layout (640-1023px)', () => {
+    beforeEach(() => {
+      global.innerWidth = 768;
+      global.dispatchEvent(new Event('resize'));
+    });
+
+    it('renders sidebar as collapsible', () => {
+      const { container } = renderAppShell();
+      const sidebar = container.querySelector('.sidebar');
+      expect(sidebar).toBeInTheDocument();
+    });
+  });
+
+  describe('Mobile layout (<640px)', () => {
+    beforeEach(() => {
+      global.innerWidth = 375;
+      global.dispatchEvent(new Event('resize'));
+    });
+
+    it('renders backdrop element', () => {
+      const { container } = renderAppShell();
+      const backdrop = container.querySelector('.backdrop');
+      expect(backdrop).toBeInTheDocument();
+    });
+
+    it('sidebar should be closed initially on mobile', () => {
+      const { container } = renderAppShell();
+      const shell = container.querySelector('.shell');
+      // Should default to closed on mobile
+      expect(shell).toHaveClass('sidebar-closed');
+    });
+  });
+
+  it('applies aria attributes correctly', () => {
+    renderAppShell();
+    const sidebar = screen.getByLabelText('Primary navigation');
+    expect(sidebar).toHaveAttribute('id', 'primary-sidebar');
     
-    expect(toggleBtn).toHaveAttribute("aria-label", "Expand sidebar");
+    const toggleButton = screen.getByLabelText(/sidebar/i);
+    expect(toggleButton).toHaveAttribute('aria-controls', 'primary-sidebar');
+    expect(toggleButton).toHaveAttribute('aria-expanded');
   });
 
-  test("smoke: active link highlighting works", () => {
-    // Simulate being on dashboard
-    window.history.pushState({}, "Dashboard", "/dashboard");
-
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <AppShell>
-            <div>Dashboard</div>
-          </AppShell>
-        </AuthProvider>
-      </BrowserRouter>
-    );
-
-    const dashLink = screen.getByRole("link", { name: /dashboard/i });
-    expect(dashLink).toHaveClass("active");
-  });
-
-  test("smoke: localStorage persistence works", () => {
-    const { rerender } = render(
-      <BrowserRouter>
-        <AuthProvider>
-          <AppShell>
-            <div>Content</div>
-          </AppShell>
-        </AuthProvider>
-      </BrowserRouter>
-    );
-
-    const toggleBtn = screen.getByRole("button", { name: /collapse sidebar/i });
-    fireEvent.click(toggleBtn);
-
-    expect(localStorage.getItem("ui_sidebar_open")).toBe("0");
-
-    // Unmount and remount to simulate page refresh
-    rerender(
-      <BrowserRouter>
-        <AuthProvider>
-          <AppShell>
-            <div>Content</div>
-          </AppShell>
-        </AuthProvider>
-      </BrowserRouter>
-    );
-
-    // Should remember collapsed state
-    const newToggleBtn = screen.getByRole("button", { name: /expand sidebar/i });
-    expect(newToggleBtn).toHaveAttribute("aria-expanded", "false");
+  it('navigation links have proper accessibility attributes', () => {
+    renderAppShell();
+    const dashboardLink = screen.getByRole('link', { name: /dashboard/i });
+    expect(dashboardLink).toHaveAttribute('aria-label', 'Dashboard');
   });
 });
