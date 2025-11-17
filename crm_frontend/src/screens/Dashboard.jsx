@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import { LineChartCard, BarChartCard } from "../components/charts/Charts";
 import { useWebSocket } from "../services/ws";
 import { eventBus } from "../services/ws";
+import { useAuth } from "../auth/AuthContext";
+import { getDemoServiceRequests } from "../services/demoStore";
 
 /**
  * PUBLIC_INTERFACE
  * Dashboard screen: KPIs and charts, live updates via websocket placeholder.
  */
 export default function Dashboard() {
+  const { dummyAuth } = useAuth();
   const [series, setSeries] = useState([
     { name: "Mon", value: 12 },
     { name: "Tue", value: 18 },
@@ -21,6 +24,20 @@ export default function Dashboard() {
     { name: "Closed", value: 44 },
   ]);
   const [closedToday, setClosedToday] = useState(8);
+
+  // Initialize status counts from demo store in demo mode so KPIs reflect seeded data immediately
+  useEffect(() => {
+    if (!dummyAuth) return;
+    const all = getDemoServiceRequests();
+    const open = all.filter((r) => String(r.status).toLowerCase() === "open").length;
+    const inProg = all.filter((r) => String(r.status).toLowerCase() === "in progress").length;
+    const closed = all.filter((r) => String(r.status).toLowerCase() === "closed").length;
+    setBar([
+      { name: "Open", value: open },
+      { name: "In Progress", value: inProg },
+      { name: "Closed", value: closed },
+    ]);
+  }, [dummyAuth]);
 
   // Websocket placeholder path; backend to implement in S3
   const { lastMessage } = useWebSocket("/ws/metrics", async () => null);

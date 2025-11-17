@@ -68,11 +68,64 @@ function emit(evtName) {
  * Service Requests (existing)
  * ========================= */
 
+// Deterministic seed dataset with stable UUIDs to ensure consistency across refreshes
+const SR_SEED = (() => {
+  const baseTs = Date.now();
+  const mk = (over, idx) => {
+    const created = new Date(baseTs - idx * 3600_000).toISOString(); // hourly back
+    const updated = new Date(baseTs - idx * 1800_000).toISOString(); // 30m back
+    return {
+      id: over.id, // fixed UUID-based ID for stability
+      title: over.title,
+      customer_id: over.customer_id,
+      customer: customerNameFromId(over.customer_id),
+      priority: over.priority,
+      status: over.status,
+      description: over.description || "",
+      due_date: over.sla_due_at || null,
+      sla_due_at: over.sla_due_at || null,
+      assignee: over.assignee || ["alex", "jamie", "taylor", "sam", "morgan"][idx % 5],
+      created_at: created,
+      updated_at: updated,
+    };
+  };
+  // Hard-coded UUIDs for stability
+  const rows = [
+    { id: "0f1ef4e8-0f9b-4d1e-8b76-7e07a0b8a101", title: "Cannot login to portal", customer_id: "c1", status: "Open", priority: "High", sla_due_at: new Date(baseTs + 4 * 3600_000).toISOString() },
+    { id: "1c2d3e4f-5a6b-7c8d-9e01-2f3a4b5c6d02", title: "Payment failure during checkout", customer_id: "c2", status: "In Progress", priority: "Urgent", sla_due_at: new Date(baseTs + 2 * 3600_000).toISOString() },
+    { id: "2a3b4c5d-6e7f-8091-a2b3-c4d5e6f70813", title: "Mobile app crashes on launch", customer_id: "c3", status: "Open", priority: "High" },
+    { id: "3b4c5d6e-7f80-91a2-b3c4-d5e6f7a8b914", title: "Invoice discrepancies for July", customer_id: "c4", status: "Resolved", priority: "Medium" },
+    { id: "4c5d6e7f-8091-a2b3-c4d5-e6f7a8b9c015", title: "Feature request: dark mode", customer_id: "c5", status: "Closed", priority: "Low" },
+    { id: "5d6e7f80-91a2-b3c4-d5e6-f7a8b9c0d116", title: "SLA breach warning: API latency", customer_id: "c6", status: "Overdue", priority: "Urgent" },
+    { id: "6e7f8091-a2b3-c4d5-e6f7-a8b9c0d1e217", title: "Email notifications not received", customer_id: "c7", status: "In Progress", priority: "Medium" },
+    { id: "7f8091a2-b3c4-d5e6-f7a8-b9c0d1e2f318", title: "Data export CSV malformed", customer_id: "c8", status: "Open", priority: "Low" },
+    { id: "8091a2b3-c4d5-e6f7-a8b9-c0d1e2f30419", title: "SSO integration issues", customer_id: "c9", status: "In Progress", priority: "High" },
+    { id: "91a2b3c4-d5e6-f7a8-b9c0-d1e2f3041520", title: "Account locked unexpectedly", customer_id: "c10", status: "Open", priority: "Medium" },
+    { id: "a2b3c4d5-e6f7-a8b9-c0d1-e2f304152621", title: "Webhook retries failing", customer_id: "c11", status: "Resolved", priority: "Medium" },
+    { id: "b3c4d5e6-f7a8-b9c0-d1e2-f30415263722", title: "Search results inconsistent", customer_id: "c12", status: "Open", priority: "Low" },
+    { id: "c4d5e6f7-a8b9-c0d1-e2f3-041526374823", title: "Analytics dashboard not loading", customer_id: "c13", status: "Overdue", priority: "High" },
+    { id: "d5e6f7a8-b9c0-d1e2-f304-152637482924", title: "Cannot reset password", customer_id: "c14", status: "Closed", priority: "Low" },
+    { id: "e6f7a8b9-c0d1-e2f3-0415-263748293025", title: "Billing address update fails", customer_id: "c15", status: "In Progress", priority: "Medium" },
+    { id: "f7a8b9c0-d1e2-f304-1526-374829302126", title: "Chat widget unresponsive", customer_id: "c16", status: "Open", priority: "Low" },
+    { id: "08b9c0d1-e2f3-0415-2637-482930212627", title: "Compliance export request", customer_id: "c17", status: "Resolved", priority: "Medium" },
+    { id: "19c0d1e2-f304-1526-3748-293021262728", title: "Sandbox environment down", customer_id: "c18", status: "Open", priority: "Urgent" },
+    { id: "2ad1e2f3-0415-2637-4829-302126272829", title: "Attachment upload times out", customer_id: "c19", status: "In Progress", priority: "High" },
+    { id: "3be2f304-1526-3748-2930-212627282930", title: "API key rotation assistance", customer_id: "c20", status: "Open", priority: "Low" },
+  ];
+  return rows.map((r, i) => mk(r, i));
+})();
+
 function ensureSRLoaded() {
   if (mem_sr !== null) return;
   const raw = safeGet(DEMO_SR_KEY);
-  const arr = raw ? safeParse(raw, []) : [];
-  mem_sr = Array.isArray(arr) ? arr : [];
+  let arr = raw ? safeParse(raw, []) : [];
+  if (!Array.isArray(arr) || arr.length === 0) {
+    // Seed customers first for name lookup
+    ensureCustomersLoaded();
+    arr = SR_SEED;
+    safeSet(DEMO_SR_KEY, arr);
+  }
+  mem_sr = arr;
 }
 
 function persistSR() {
@@ -122,6 +175,9 @@ export function addDemoServiceRequest(input) {
     description: input?.description || "",
     due_date: input?.due_date || null,
     created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    assignee: input?.assignee || null,
+    sla_due_at: input?.sla_due_at || null,
   };
 
   mem_sr.push(item);
@@ -139,12 +195,52 @@ export function updateDemoServiceRequest(id, patch) {
   ensureSRLoaded();
   const idx = mem_sr.findIndex((x) => x.id === id);
   if (idx >= 0) {
-    mem_sr[idx] = { ...mem_sr[idx], ...patch };
+    mem_sr[idx] = { ...mem_sr[idx], ...patch, updated_at: new Date().toISOString() };
     persistSR();
     emit(DEMO_SR_EVENT);
     return mem_sr[idx];
   }
   return null;
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Append additional mock service requests for pagination/testing.
+ */
+export function seedMoreServiceRequests(count = 10) {
+  /** Append N generated service requests to the demo dataset and persist. */
+  ensureSRLoaded();
+  ensureCustomersLoaded();
+  const statuses = ["Open", "In Progress", "Resolved", "Closed", "Overdue"];
+  const priorities = ["Low", "Medium", "High", "Urgent"];
+  const assignees = ["alex", "jamie", "taylor", "sam", "morgan"];
+  const now = Date.now();
+
+  const items = Array.from({ length: Math.max(0, Number(count) || 0) }, (_, i) => {
+    const created = new Date(now - (i + 1) * 7200_000); // every 2h back
+    const id = uuidv4();
+    const customerIdx = (mem_customers?.length || 20) > 0 ? (i % mem_customers.length) : i % 20;
+    const customer_id = (mem_customers?.[customerIdx]?.id) || `c${(customerIdx % 20) + 1}`;
+    return {
+      id,
+      title: `Generated SR #${mem_sr.length + i + 1}`,
+      customer_id,
+      customer: customerNameFromId(customer_id),
+      status: statuses[i % statuses.length],
+      priority: priorities[i % priorities.length],
+      description: "",
+      created_at: created.toISOString(),
+      updated_at: created.toISOString(),
+      assignee: assignees[i % assignees.length],
+      sla_due_at: new Date(created.getTime() + 24 * 3600_000).toISOString(),
+      due_date: new Date(created.getTime() + 24 * 3600_000).toISOString(),
+    };
+  });
+
+  mem_sr.push(...items);
+  persistSR();
+  emit(DEMO_SR_EVENT);
+  return items.length;
 }
 
 /**
