@@ -1,16 +1,23 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LineChartCard, BarChartCard } from "../components/charts/Charts";
-import { useWebSocket } from "../services/ws";
-import { eventBus } from "../services/ws";
+import { useWebSocket, eventBus } from "../services/ws";
 import { useAuth } from "../auth/AuthContext";
-import { getDemoServiceRequests, getDemoComplaints } from "../services/demoStore";
+import {
+  getDemoServiceRequests,
+  getComplaints as demoGetComplaints,
+  subscribeComplaints as demoSubscribeComplaints,
+} from "../services/demoStore";
+import { getApiClient } from "../services/apiClient";
 
 /**
  * PUBLIC_INTERFACE
  * Dashboard screen: KPIs and charts, live updates via websocket placeholder.
+ * - Complaint KPIs are sourced from API when enabled, else from demoStore single source of truth.
  */
 export default function Dashboard() {
   const { dummyAuth } = useAuth();
+
+  // Charts
   const [series, setSeries] = useState([
     { name: "Mon", value: 12 },
     { name: "Tue", value: 18 },
@@ -23,29 +30,117 @@ export default function Dashboard() {
     { name: "In Progress", value: 21 },
     { name: "Closed", value: 44 },
   ]);
-  const [closedToday, setClosedToday] = useState(8);
+
+  // Complaint KPIs
   const [openComplaints, setOpenComplaints] = useState(0);
   const [createdToday, setCreatedToday] = useState(0);
+  const [closedToday, setClosedToday] = useState(0);
 
-  // Initialize status counts from demo store in demo mode so KPIs reflect seeded data immediately
+  // Debounce helpers
+  const debounceRef = useRef(null);
+  const pendingKPIRef = useRef({ open: 0, created: 0, closed: 0 });
+
+  function toUTCDateOnly(d) {
+    if (!d) return null;
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return null;
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+  }
+  function isUTCDateToday(d) {
+    const s = toUTCDateOnly(d);
+    if (!s) return false;
+    const now = new Date();
+    const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+    return s === today;
+  }
+
+  // Decide whether API is enabled
+  const apiEnabled = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
+
+  const recomputeComplaintKPIs = useCallback((allComplaints) => {
+    const items = Array.isArray(allComplaints) ? allComplaints : [];
+    const open = items.filter((c) => {
+      const s = String(c.status || "").toLowerCase();
+      return s !== "closed" && s !== "resolved";
+    }).length;
+    const created = items.filter((c) => isUTCDateToday(c.created_at)).length;
+    const closed = items.filter((c) => isUTCDateToday(c.closed_at)).length;
+
+    // Guard against negatives and NaN
+    const safe = (n) => (Number.isFinite(n) && n > 0 ? n : 0);
+
+    pendingKPIRef.current = { open: safe(open), created: safe(created), closed: safe(closed) };
+    // Debounce UI update to avoid flicker on bursts
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setOpenComplaints(pendingKPIRef.current.open);
+      setCreatedToday(pendingKPIRef.current.created);
+      setClosedToday(pendingKPIRef.current.closed);
+
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.info("[Dashboard] Complaint KPIs:", {
+          open: pendingKPIRef.current.open,
+          createdToday: pendingKPIRef.current.created,
+          closedToday: pendingKPIRef.current.closed,
+          source: apiEnabled ? "api" : "demo",
+        });
+      }
+    }, 150);
+  }, [apiEnabled]);
+
+  // Initialize SR status chart in demo (fallback)
   useEffect(() => {
-    if (!dummyAuth) return;
+    // Always set SR bars from demo in this build; API SR aggregation is out of scope here.
     const all = getDemoServiceRequests();
-    const open = all.filter((r) => String(r.status).toLowerCase() === "open").length;
-    const inProg = all.filter((r) => String(r.status).toLowerCase() === "in progress").length;
-    const closed = all.filter((r) => String(r.status).toLowerCase() === "closed").length;
+    const norm = (s) => String(s || "").toLowerCase();
+    const open = all.filter((r) => norm(r.status) === "open").length;
+    const inProg = all.filter((r) => norm(r.status) === "in progress").length;
+    const closed = all.filter((r) => norm(r.status) === "closed").length;
     setBar([
       { name: "Open", value: open },
       { name: "In Progress", value: inProg },
       { name: "Closed", value: closed },
     ]);
+  }, []);
 
-    const complaints = getDemoComplaints();
-    const cmpOpen = complaints.filter((c) => String(c.status).toLowerCase() === "open").length;
-    setOpenComplaints(cmpOpen);
-  }, [dummyAuth]);
+  // Fetch complaints from API or demoStore
+  const loadComplaints = useCallback(async () => {
+    try {
+      if (apiEnabled) {
+        const api = getApiClient();
+        // Pull first few pages until threshold or break; for KPI counts we can just get one page with high page_size if supported
+        const { data } = await api.get("/complaints", { params: { page: 1, page_size: 200 } });
+        const items = Array.isArray(data?.items) ? data.items : [];
+        recomputeComplaintKPIs(items);
+        return;
+      }
+    } catch {
+      // Fallback to demo on API error
+    }
+    // Demo fallback single source of truth
+    const items = demoGetComplaints();
+    recomputeComplaintKPIs(items);
+  }, [apiEnabled, recomputeComplaintKPIs]);
 
-  // Websocket placeholder path; backend to implement in S3
+  // Init on mount
+  useEffect(() => {
+    loadComplaints();
+  }, [loadComplaints]);
+
+  // Subscribe to in-app demo store changes for complaints (when in demo/fallback)
+  useEffect(() => {
+    if (!apiEnabled) {
+      const unsub = demoSubscribeComplaints(() => {
+        const items = demoGetComplaints();
+        recomputeComplaintKPIs(items);
+      });
+      return () => unsub?.();
+    }
+    return () => {};
+  }, [apiEnabled, recomputeComplaintKPIs]);
+
+  // Websocket placeholder path; backend to implement in future
   const { lastMessage } = useWebSocket("/ws/metrics", async () => null);
 
   useEffect(() => {
@@ -57,57 +152,61 @@ export default function Dashboard() {
     }
   }, [lastMessage]);
 
+  // Event bus listeners for immediate UI updates
   useEffect(() => {
-    const unsub1 = eventBus.on("sr:resolved", () => {
-      // Increment Closed and decrement Open/Progress if available
+    const unsubResolved = eventBus.on("sr:resolved", () => {
       setBar((cur) => {
         const next = cur.map((b) => ({ ...b }));
         const idxClosed = next.findIndex((b) => b.name === "Closed");
-        if (idxClosed >= 0) next[idxClosed].value += 1;
+        if (idxClosed >= 0) next[idxClosed].value = Math.max(0, (next[idxClosed].value || 0) + 1);
         const idxOpen = next.findIndex((b) => b.name === "Open");
-        if (idxOpen >= 0 && next[idxOpen].value > 0) next[idxOpen].value -= 1;
+        if (idxOpen >= 0 && (next[idxOpen].value || 0) > 0) next[idxOpen].value -= 1;
         else {
           const idxProg = next.findIndex((b) => b.name === "In Progress");
-          if (idxProg >= 0 && next[idxProg].value > 0) next[idxProg].value -= 1;
+          if (idxProg >= 0 && (next[idxProg].value || 0) > 0) next[idxProg].value -= 1;
         }
         return next;
       });
-      setClosedToday((n) => n + 1);
+      // SR closed does not affect complaint KPIs
     });
-    const unsub2 = eventBus.on("complaint:closed", () => {
-      // Reflect in KPI: decrement open complaints, increment closed today
-      setOpenComplaints((n) => (n > 0 ? n - 1 : 0));
-      setClosedToday((n) => n + 1);
-    });
-    const unsub3 = eventBus.on("sr:created", () => {
-      // New SR -> increment Open count in status distribution and created today
+    const unsubSrCreated = eventBus.on("sr:created", () => {
       setBar((cur) => {
         const next = cur.map((b) => ({ ...b }));
         const idxOpen = next.findIndex((b) => b.name === "Open");
-        if (idxOpen >= 0) next[idxOpen].value += 1;
+        if (idxOpen >= 0) next[idxOpen].value = Math.max(0, (next[idxOpen].value || 0) + 1);
         else next.push({ name: "Open", value: 1 });
         return next;
       });
-      setCreatedToday((n) => n + 1);
     });
-    const unsub4 = eventBus.on("complaint:created", () => {
-      setOpenComplaints((n) => n + 1);
-      setCreatedToday((n) => n + 1);
+
+    // Complaint-specific events update KPIs immediately then re-validate via loadComplaints (debounced)
+    const unsubCmpCreated = eventBus.on("complaint:created", () => {
+      // optimistic
+      setOpenComplaints((n) => Math.max(0, (n || 0) + 1));
+      setCreatedToday((n) => Math.max(0, (n || 0) + 1));
+      // reconcile from source
+      loadComplaints();
     });
+    const unsubCmpClosed = eventBus.on("complaint:closed", () => {
+      setOpenComplaints((n) => Math.max(0, (n || 0) - 1));
+      setClosedToday((n) => Math.max(0, (n || 0) + 1));
+      loadComplaints();
+    });
+
     return () => {
-      unsub1?.();
-      unsub2?.();
-      unsub3?.();
-      unsub4?.();
+      unsubResolved?.();
+      unsubSrCreated?.();
+      unsubCmpCreated?.();
+      unsubCmpClosed?.();
     };
-  }, []);
+  }, [loadComplaints]);
 
   const kpis = useMemo(
     () => [
       { label: "Open SRs", value: bar.find((b) => b.name === "Open")?.value ?? 0 },
-      { label: "Open Complaints", value: openComplaints },
-      { label: "Created Today", value: createdToday },
-      { label: "Closed Today", value: closedToday },
+      { label: "Open Complaints", value: Math.max(0, openComplaints || 0) },
+      { label: "Created Today", value: Math.max(0, createdToday || 0) },
+      { label: "Closed Today", value: Math.max(0, closedToday || 0) },
     ],
     [bar, openComplaints, createdToday, closedToday]
   );

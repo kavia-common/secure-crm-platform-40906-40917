@@ -438,15 +438,17 @@ export function addDemoComplaint(input) {
   const idx = (mem_complaints?.length || 0) + 1;
   const id = String(input?.id || `cmp-${idx}`);
   const customer_id = String(input?.customer_id || "c1");
+  const status = String(input?.status || "Open");
   const item = {
     id,
     title: String(input?.title || `Complaint #${idx}`),
     customer_id,
     customer: customerNameFromId(customer_id),
-    status: String(input?.status || "Open"),
+    status,
     escalation: String(input?.escalation || "L1"),
     priority: String(input?.priority || "Medium"),
     created_at: now.toISOString(),
+    closed_at: status.toLowerCase() === "closed" ? now.toISOString() : null,
   };
   mem_complaints.push(item);
   persistComplaints();
@@ -463,7 +465,12 @@ export function updateDemoComplaint(id, patch) {
   ensureComplaintsLoaded();
   const idx = mem_complaints.findIndex((x) => x.id === id);
   if (idx >= 0) {
-    mem_complaints[idx] = { ...mem_complaints[idx], ...patch };
+    const next = { ...mem_complaints[idx], ...patch };
+    // Normalize closed_at on close transition
+    if (String(next.status || "").toLowerCase() === "closed" && !next.closed_at) {
+      next.closed_at = new Date().toISOString();
+    }
+    mem_complaints[idx] = next;
     persistComplaints();
     emit(DEMO_COMPLAINTS_EVENT);
     return mem_complaints[idx];
@@ -567,16 +574,19 @@ function seedComplaints(customers) {
     const cust = customers?.[i % (customers?.length || 1)];
     const customer_id = cust?.id || `c${(i % 10) + 1}`;
     const customer = cust?.name || customerNameFromId(customer_id);
-    const created = new Date(Date.now() - i * 43200000).toISOString(); // every 12h back
+    const created = new Date(Date.now() - i * 43200000); // every 12h back
+    const status = statuses[i % statuses.length];
+    const closed_at = status === "Closed" ? new Date(created.getTime() + 2 * 3600_000).toISOString() : null;
     return {
       id,
       title: `Complaint #${i + 1}`,
       customer_id,
       customer,
-      status: statuses[i % statuses.length],
+      status,
       escalation: levels[i % levels.length],
       priority: priorities[i % priorities.length],
-      created_at: created,
+      created_at: created.toISOString(),
+      closed_at,
     };
   });
   return arr;
