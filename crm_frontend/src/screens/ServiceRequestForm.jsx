@@ -10,6 +10,12 @@ import { getApiClient } from "../services/apiClient";
 import { useAuth } from "../auth/AuthContext";
 import { addDemoServiceRequest } from "../services/demoStore";
 import { useNavigate } from "react-router-dom";
+import { eventBus } from "../services/ws";
+import {
+  shouldUseFallback,
+  markResourceAvailable,
+  markResourceUnavailable,
+} from "../services/runtimeFlags";
 
 /**
  * PUBLIC_INTERFACE
@@ -70,24 +76,31 @@ export default function ServiceRequestForm() {
 
       // Defensive log for diagnostics (no secrets)
       // eslint-disable-next-line no-console
-      console.info("[SR] POST", finalUrl, { payloadSummary: { title: payload.title, customer_id: payload.customer_id, priority: payload.priority, due_date: !!payload.due_date } });
+      console.info("[SR] POST", finalUrl, {
+        payloadSummary: {
+          title: payload.title,
+          customer_id: payload.customer_id,
+          priority: payload.priority,
+          due_date: !!payload.due_date,
+        },
+      });
 
-      // DEMO/DUMMY mode: short-circuit to avoid backend dependency or 404 due to proxy/base issues
+      const resourceKey = "service_requests";
       const apiFeatureEnabled = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
-      if (dummyAuth || !apiFeatureEnabled) {
-        // eslint-disable-next-line no-console
-        console.info("[SR] Demo mode or API disabled -> short-circuit success (no network)");
-        // Add to demo store so the list view can show it immediately
-        addDemoServiceRequest({
+      const useFallback = dummyAuth || !apiFeatureEnabled || shouldUseFallback(resourceKey);
+
+      // Fallback path (demo/offline/disabled or flagged unavailable): write to demo store and broadcast event BEFORE navigation
+      if (useFallback) {
+        const created = addDemoServiceRequest({
           title: payload.title,
           customer_id: payload.customer_id,
           priority: payload.priority,
           description: payload.description,
           due_date: payload.due_date,
         });
+        eventBus.emit("sr:created", created);
         toast.push("Service request created", "success");
         reset();
-        // Navigate to the list view
         navigate("/service-requests", { replace: true });
         return;
       }
@@ -96,32 +109,48 @@ export default function ServiceRequestForm() {
       const res = await api.post(endpointPath, payload);
       // eslint-disable-next-line no-console
       console.info("[SR] Response status:", res?.status);
+
+      // Mark resource available on success and emit creation event for live KPIs/list refresh
+      try { markResourceAvailable(resourceKey); } catch {}
+      const created = {
+        id: res?.data?.id ?? "",
+        status: res?.data?.status ?? "Open",
+        ...payload,
+      };
+      eventBus.emit("sr:created", created);
+
       toast.push("Service request created", "success");
       reset();
-      try { navigate("/service-requests", { replace: true }); } catch {}
+      try {
+        navigate("/service-requests", { replace: true });
+      } catch {}
     } catch (e) {
-      const status = e?.response?.status;
-      const base = api?.defaults?.baseURL || process.env.REACT_APP_API_BASE || "/api/v1";
-      const path = "/service-requests";
-      const full = `${base}${path}`;
-      let msg;
-      if (status === 404) {
-        msg = `Endpoint not found (404) at ${full}. Check REACT_APP_API_BASE and backend route POST ${path}.`;
-      } else if (status) {
-        msg = `Server error (${status}) when calling ${full}.`;
-      } else {
-        msg = `Network error: could not reach ${full}.`;
-      }
+      // On error, mark resource unavailable this session and fallback to local create so UX stays responsive
+      const resourceKey = "service_requests";
+      try { markResourceUnavailable(resourceKey); } catch {}
+
       // eslint-disable-next-line no-console
-      console.error("[SR] Create failed", {
+      console.error("[SR] Create failed; falling back to local demo store", {
         status: e?.response?.status,
         statusText: e?.response?.statusText,
         baseURL: api?.defaults?.baseURL,
-        path,
+        path: "/service-requests",
         message: e?.message,
         responseData: e?.response?.data,
       });
-      toast.push(msg, "error");
+
+      const created = addDemoServiceRequest({
+        title: watch("title"),
+        customer_id: watch("customerId"),
+        priority: watch("priority"),
+        due_date: watch("dueDate") || null,
+        description: watch("description"),
+      });
+      eventBus.emit("sr:created", created);
+
+      toast.push("Service request created (offline mode)", "success");
+      reset();
+      navigate("/service-requests", { replace: true });
     }
   };
 

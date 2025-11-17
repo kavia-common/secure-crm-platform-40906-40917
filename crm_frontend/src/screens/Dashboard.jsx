@@ -72,9 +72,20 @@ export default function Dashboard() {
       // Reflect in KPI minimally (Closed Today as generic completion metric)
       setClosedToday((n) => n + 1);
     });
+    const unsub3 = eventBus.on("sr:created", () => {
+      // New SR -> increment Open count in status distribution
+      setBar((cur) => {
+        const next = cur.map((b) => ({ ...b }));
+        const idxOpen = next.findIndex((b) => b.name === "Open");
+        if (idxOpen >= 0) next[idxOpen].value += 1;
+        else next.push({ name: "Open", value: 1 });
+        return next;
+      });
+    });
     return () => {
       unsub1?.();
       unsub2?.();
+      unsub3?.();
     };
   }, []);
 

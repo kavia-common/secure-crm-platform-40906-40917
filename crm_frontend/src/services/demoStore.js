@@ -264,6 +264,37 @@ export function subscribeDemoServiceRequests(callback) {
 }
 
 /* =========================
+ * Aliases for generalized API names (for components expecting generic store)
+ * ========================= */
+
+// PUBLIC_INTERFACE
+export function addServiceRequest(input) {
+  /**
+   * Alias for addDemoServiceRequest, providing a generic API to add
+   * a service request in demo/fallback mode while ensuring stable ID semantics.
+   */
+  return addDemoServiceRequest(input);
+}
+
+// PUBLIC_INTERFACE
+export function subscribeServiceRequests(callback) {
+  /**
+   * Alias for subscribeDemoServiceRequests, allowing generic components
+   * to listen to updates without importing demo-specific names.
+   */
+  return subscribeDemoServiceRequests(callback);
+}
+
+// PUBLIC_INTERFACE
+export function getServiceRequests() {
+  /**
+   * Alias for getDemoServiceRequests, returning all demo SRs
+   * sorted by created_at desc for immediate list rendering.
+   */
+  return getDemoServiceRequests();
+}
+
+/* =========================
  * Customers (new)
  * ========================= */
 

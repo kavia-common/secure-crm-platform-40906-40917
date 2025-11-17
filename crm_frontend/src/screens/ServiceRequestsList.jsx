@@ -32,6 +32,8 @@ export default function ServiceRequestsList() {
   const [sort, setSort] = useState({ key: "created_at", dir: "desc" });
   const [statusFilter, setStatusFilter] = useState("");
   const [q, setQ] = useState("");
+  // When an external event occurs (create/resolve), bump this to trigger a reload in API mode
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const toast = useToast();
 
@@ -137,7 +139,8 @@ export default function ServiceRequestsList() {
     page,
     pageSize,
     sort,
-    filter: { status: statusFilter || undefined, q: q || undefined },
+    // Include a non-functional refresh token to trigger useEffect dependency
+    filter: { status: statusFilter || undefined, q: q || undefined, __refresh: refreshTick },
     fallbackKey: "service_requests",
   });
 
@@ -170,6 +173,28 @@ export default function ServiceRequestsList() {
   const rows = localRows;
   const total = dummyAuth ? demoFilteredSorted.length : apiTotal;
   const loading = dummyAuth ? false : apiLoading;
+
+  // Listen for global events to refresh list
+  useEffect(() => {
+    const offCreated = eventBus.on("sr:created", () => {
+      if (dummyAuth) {
+        setDemoAll(getDemoServiceRequests());
+      } else {
+        setRefreshTick((n) => n + 1);
+      }
+    });
+    const offResolved = eventBus.on("sr:resolved", () => {
+      if (dummyAuth) {
+        setDemoAll(getDemoServiceRequests());
+      } else {
+        setRefreshTick((n) => n + 1);
+      }
+    });
+    return () => {
+      offCreated?.();
+      offResolved?.();
+    };
+  }, [dummyAuth]);
 
   // Handle confirm resolve
   const handleResolve = async () => {
