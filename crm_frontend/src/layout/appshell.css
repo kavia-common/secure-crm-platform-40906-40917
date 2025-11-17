@@ -306,6 +306,26 @@ nav[role="navigation"] {
   background: var(--color-background);
 }
 
+/* Route-aware defensive rules for Dashboard to ensure no overlap and correct grid/stacking */
+.app-shell[data-route="dashboard"] .main {
+  grid-area: main !important;
+  padding-left: 0 !important; /* grid defines spacing; avoid double spacing pushing under sidebar */
+  z-index: 0 !important; /* below topbar/sidebar */
+  min-width: 0 !important;
+  overflow: auto !important;
+}
+
+/* Guard against any absolute/fixed content inside dashboard pulling over the sidebar/topbar */
+.app-shell[data-route="dashboard"] .main * {
+  /* do not force position, but ensure elements without explicit stacking don't exceed main */
+  z-index: auto;
+}
+
+/* Ensure header inside dashboard does not collide with sticky topbar spacing */
+.app-shell[data-route="dashboard"] .main h1 {
+  margin-top: 0;
+}
+
 .main:focus {
   outline: none;
 }

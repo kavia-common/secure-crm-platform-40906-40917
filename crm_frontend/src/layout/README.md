@@ -83,13 +83,14 @@ This directory contains the main application shell and layout components for the
 
 ## State Attributes
 
-The shell uses data-attributes for state management:
+The shell uses data-attributes for state management and route scoping:
 
 ```html
 <div class="shell" 
      data-collapsed="false"    <!-- Sidebar collapsed state -->
      data-drawer="false"       <!-- Drawer mode (mobile only) -->
-     data-viewport="desktop">  <!-- Current viewport mode -->
+     data-viewport="desktop"   <!-- Current viewport mode -->
+     data-route="dashboard">   <!-- Top-level route key for route-aware CSS guards -->
 ```
 
 These attributes drive CSS styling and ensure consistency between JavaScript and styles.

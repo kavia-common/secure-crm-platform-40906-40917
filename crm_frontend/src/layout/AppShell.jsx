@@ -149,12 +149,20 @@ export function AppShell({ children }) {
 
   const isDrawerMode = viewportMode === "mobile";
 
+  // Compute a simple route key for route-aware CSS (e.g., 'dashboard', 'customers')
+  const routeKey = React.useMemo(() => {
+    const path = location.pathname || "/";
+    const seg = path.split("/").filter(Boolean)[0] || "root";
+    return seg.toLowerCase();
+  }, [location.pathname]);
+
   return (
     <div
       className={clsx("app-shell")}
       data-collapsed={collapsed ? "true" : "false"}
       data-drawer={isDrawerMode ? "true" : "false"}
       data-viewport={viewportMode}
+      data-route={routeKey}
     >
       {/* Mobile backdrop for drawer mode (does not cover sidebar area when open) */}
       {isDrawerMode && (
