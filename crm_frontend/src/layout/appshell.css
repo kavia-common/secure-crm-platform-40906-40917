@@ -240,6 +240,7 @@ nav[role="navigation"] {
   display: inline-flex; /* Ensure stable hit area and alignment */
   align-items: center;
   justify-content: center;
+  position: static; /* Ensure no absolute/fixed positioning for toggle */
 }
 
 /* Provide slight spacing from left edge to avoid intrusion into content */
@@ -294,6 +295,7 @@ nav[role="navigation"] {
   padding: var(--space-6);
   overflow: auto;
   position: relative;
+  z-index: 10; /* Ensure main stays below overlays but above background */
   min-width: 0; /* Critical: allows content to shrink below intrinsic width */
   min-height: 0; /* Prevents overflow in flex/grid container */
   background: var(--color-background);
