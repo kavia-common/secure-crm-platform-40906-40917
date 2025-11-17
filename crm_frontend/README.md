@@ -47,12 +47,30 @@ import { Modal } from "@/components/overlays/Overlays";
 ## Screens
 
 - Dashboard: charts + KPIs with WS updates
-- Customer 360: server-side table, quick filter
+- Customers: list view with demo-mode data (local store) and API fallback; search + owner filter; route /customers
 - Service Requests: form with Zod validation, modal confirm
 - SR Detail: tabs + activity table
 - Omni-Channel Inbox: live WS messages grouped by channel
-- Complaints: server-side table
+- Complaints: list view with demo-mode data (local store) and API fallback; search + status/priority filters; route /complaints
 - Settings: Drawer demo
+
+## Demo data store
+
+When running in demo mode (default: REACT_APP_FEATURE_DUMMY_AUTH=true), list screens for Service Requests, Customers, and Complaints read from an in-memory store with localStorage persistence. This enables a fully functional UI without a backend.
+
+- Service Requests: src/services/demoStore.js (keys: demo_service_requests)
+- Customers: src/services/demoStore.js (keys: demo_customers)
+- Complaints: src/services/demoStore.js (keys: demo_complaints)
+
+Behavior:
+- Data is seeded deterministically on first load for Customers and Complaints.
+- Tables support client-side search, filters, and sorting.
+- Row clicks show a toast when details are not implemented yet.
+
+When REACT_APP_FEATURE_DUMMY_AUTH=false, screens use API endpoints via useServerTable:
+- GET {REACT_APP_API_BASE}/customers
+- GET {REACT_APP_API_BASE}/complaints
+On network or server error, a toast shows the endpoint and error status/message.
 
 ## Accessibility
 
