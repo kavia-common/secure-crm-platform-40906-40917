@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../services/apiClient";
 import { useAuth } from "../../auth/AuthContext";
+import {
+  shouldUseFallback,
+  markResourceUnavailable,
+  markResourceAvailable,
+} from "../../services/runtimeFlags";
 
 /**
  * PUBLIC_INTERFACE
@@ -52,19 +57,136 @@ export function Pagination({ page, pageSize, total, onPageChange }) {
   );
 }
 
+function isNetworkError(e) {
+  return !e?.response || e?.code === "ERR_NETWORK";
+}
+function isNotFound(e) {
+  return e?.response?.status === 404;
+}
+
+async function buildFallbackRows(fallbackKey, { page, pageSize, sort, filter }) {
+  try {
+    const mod = await import("../../services/demoStore");
+    const dir = (sort?.dir || "asc").toLowerCase() === "desc" ? "desc" : "asc";
+    const key = sort?.key;
+
+    // Helpers
+    const applySort = (rows) => {
+      if (!key) return rows;
+      const copy = [...rows];
+      copy.sort((a, b) => {
+        let av = a[key];
+        let bv = b[key];
+        if (key === "created_at") {
+          av = new Date(av || 0).getTime();
+          bv = new Date(bv || 0).getTime();
+        } else {
+          av = typeof av === "string" ? av.toLowerCase() : av;
+          bv = typeof bv === "string" ? bv.toLowerCase() : bv;
+        }
+        if (av < bv) return dir === "asc" ? -1 : 1;
+        if (av > bv) return dir === "asc" ? 1 : -1;
+        return 0;
+      });
+      return copy;
+    };
+    const paginate = (rows) => {
+      const start = (Number(page) - 1) * Number(pageSize);
+      return rows.slice(start, start + Number(pageSize));
+    };
+
+    if (fallbackKey === "customers") {
+      const all = mod.getDemoCustomers();
+      const term = String(filter?.q || "").toLowerCase();
+      const owner = filter?.owner_id ? String(filter.owner_id) : "";
+      let rows = Array.isArray(all) ? [...all] : [];
+      if (term) {
+        rows = rows.filter(
+          (r) =>
+            String(r.id || "").toLowerCase().includes(term) ||
+            String(r.name || "").toLowerCase().includes(term) ||
+            String(r.email || "").toLowerCase().includes(term)
+        );
+      }
+      if (owner) {
+        rows = rows.filter((r) => String(r.owner_id || "") === owner);
+      }
+      rows = applySort(rows);
+      const paged = paginate(rows);
+      return { items: paged, total: rows.length };
+    }
+
+    if (fallbackKey === "complaints") {
+      const all = mod.getDemoComplaints();
+      const term = String(filter?.q || "").toLowerCase();
+      const status = filter?.status ? String(filter.status) : "";
+      const severity = filter?.severity ? String(filter.severity) : "";
+      let rows = Array.isArray(all) ? [...all] : [];
+      if (term) {
+        rows = rows.filter(
+          (r) =>
+            String(r.id || "").toLowerCase().includes(term) ||
+            String(r.title || "").toLowerCase().includes(term) ||
+            String(r.customer || "").toLowerCase().includes(term)
+        );
+      }
+      if (status) rows = rows.filter((r) => String(r.status || "") === status);
+      if (severity) rows = rows.filter((r) => String(r.priority || "") === severity);
+      rows = applySort(rows);
+      const paged = paginate(rows);
+      return { items: paged, total: rows.length };
+    }
+
+    if (fallbackKey === "service_requests") {
+      const all = mod.getDemoServiceRequests();
+      const term = String(filter?.q || "").toLowerCase();
+      const status = filter?.status ? String(filter.status) : "";
+      let rows = Array.isArray(all) ? [...all] : [];
+      if (term) {
+        rows = rows.filter(
+          (r) =>
+            String(r.id || "").toLowerCase().includes(term) ||
+            String(r.title || "").toLowerCase().includes(term) ||
+            String(r.customer || "").toLowerCase().includes(term)
+        );
+      }
+      if (status) rows = rows.filter((r) => String(r.status || "").toLowerCase() === status.toLowerCase());
+      rows = applySort(rows);
+      const paged = paginate(rows);
+      return { items: paged, total: rows.length };
+    }
+  } catch {
+    // ignore dynamic import failures -> return empty dataset
+  }
+  return { items: [], total: 0 };
+}
+
 /**
  * PUBLIC_INTERFACE
  * useServerTable: fetches data using API with server pagination/sort/filter.
+ * If a fallbackKey is provided, the hook will:
+ * - Skip API calls when the resource is flagged unavailable in this session
+ * - On 404/network error, mark unavailable and serve fallback data (demoStore)
+ * - On success, mark the resource available (re-enables API automatically)
  */
-export function useServerTable({ path, page, pageSize, sort, filter }) {
+export function useServerTable({ path, page, pageSize, sort, filter, fallbackKey = null }) {
   const { getToken } = useAuth();
   const api = useMemo(() => getApiClient(getToken), [getToken]);
   const [state, setState] = useState({ rows: [], total: 0, loading: false, error: null });
 
   useEffect(() => {
     let cancel = false;
+
     async function load() {
       setState((s) => ({ ...s, loading: true, error: null }));
+
+      // Use fallback immediately if flagged or API disabled
+      if (fallbackKey && shouldUseFallback(fallbackKey)) {
+        const { items, total } = await buildFallbackRows(fallbackKey, { page, pageSize, sort, filter });
+        if (!cancel) setState({ rows: items, total, loading: false, error: null });
+        return;
+      }
+
       try {
         const params = {
           page,
@@ -73,19 +195,27 @@ export function useServerTable({ path, page, pageSize, sort, filter }) {
           ...filter,
         };
         const { data } = await api.get(path, { params });
-        // Expect backend S3 to implement: { items: [], total: number }
         const items = data?.items || [];
         const total = Number(data?.total ?? items.length);
+        if (fallbackKey) markResourceAvailable(fallbackKey);
         if (!cancel) setState({ rows: items, total, loading: false, error: null });
       } catch (e) {
-        if (!cancel) setState((s) => ({ ...s, loading: false, error: e?.message || "Failed to load" }));
+        if (fallbackKey && (isNetworkError(e) || isNotFound(e))) {
+          // Cache unavailability and switch to fallback data silently
+          markResourceUnavailable(fallbackKey);
+          const { items, total } = await buildFallbackRows(fallbackKey, { page, pageSize, sort, filter });
+          if (!cancel) setState({ rows: items, total, loading: false, error: null });
+        } else {
+          if (!cancel) setState((s) => ({ ...s, loading: false, error: e?.message || "Failed to load" }));
+        }
       }
     }
+
     load();
     return () => {
       cancel = true;
     };
-  }, [api, path, page, pageSize, sort, JSON.stringify(filter)]);
+  }, [api, path, page, pageSize, sort, JSON.stringify(filter), fallbackKey]);
 
   return state;
 }
@@ -109,7 +239,7 @@ export function DataTable({ columns, rows, sort, onSortChange, loading, emptyTex
       <table role="grid" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead style={{ background: "rgba(17,24,39,.03)" }}>
           <tr>
-            {columns.map((c) => (
+            {columns.map((c) =>
               <th
                 key={c.key}
                 scope="col"
@@ -129,7 +259,7 @@ export function DataTable({ columns, rows, sort, onSortChange, loading, emptyTex
                 {c.header}
                 {c.sortable && sort?.key === c.key ? (sort.dir === "asc" ? " ▲" : " ▼") : null}
               </th>
-            ))}
+            )}
           </tr>
         </thead>
         <tbody>

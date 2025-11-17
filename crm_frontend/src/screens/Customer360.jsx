@@ -18,6 +18,7 @@ export default function Customer360() {
     pageSize,
     sort,
     filter: { q },
+    fallbackKey: "customers",
   });
 
   const columns = useMemo(
