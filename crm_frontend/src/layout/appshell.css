@@ -13,8 +13,11 @@
   
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
-  grid-template-rows: 100vh;
-  grid-template-areas: "sidebar content";
+  /* Reserve explicit topbar height row and main row below it */
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main";
   height: 100vh;
   width: 100vw;
   background: var(--color-background);
@@ -30,7 +33,10 @@
 /* Drawer mode (mobile): single column layout */
 .shell[data-drawer="true"] {
   grid-template-columns: 1fr;
-  grid-template-areas: "content";
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas:
+    "topbar"
+    "main";
 }
 
 /* Sidebar: fixed column in desktop/tablet, drawer in mobile */
@@ -196,21 +202,15 @@ nav[role="navigation"] {
   padding-right: var(--space-2);
 }
 
-/* Content area: occupies second grid column or full width in drawer mode */
+/* Content wrapper was used before; main area now directly occupies grid area.
+   Kept for backward compatibility (unused in new markup). */
 .content {
-  grid-area: content;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0; /* Critical: allow content to shrink */
-  min-height: 0; /* Critical: prevent overflow */
-  background: var(--color-background);
-  position: relative;
-  z-index: 10;
+  display: contents;
 }
 
 /* Top bar */
 .topbar {
+  grid-area: topbar;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -234,8 +234,17 @@ nav[role="navigation"] {
   font-size: 16px;
   color: var(--color-text);
   line-height: 1;
-  min-height: 36px;
+  min-height: 44px; /* Safe target size for accessibility */
+  min-width: 44px;  /* Safe target size for accessibility */
   font-family: inherit;
+  display: inline-flex; /* Ensure stable hit area and alignment */
+  align-items: center;
+  justify-content: center;
+}
+
+/* Provide slight spacing from left edge to avoid intrusion into content */
+.topbar .iconbtn {
+  margin-left: 4px;
 }
 
 .iconbtn:hover,
@@ -281,12 +290,12 @@ nav[role="navigation"] {
 
 /* Main content area with proper overflow handling */
 .main {
-  flex: 1;
+  grid-area: main;
   padding: var(--space-6);
   overflow: auto;
   position: relative;
   min-width: 0; /* Critical: allows content to shrink below intrinsic width */
-  min-height: 0; /* Prevents overflow in flex container */
+  min-height: 0; /* Prevents overflow in flex/grid container */
   background: var(--color-background);
 }
 

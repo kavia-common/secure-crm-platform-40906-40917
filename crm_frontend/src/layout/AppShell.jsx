@@ -49,10 +49,12 @@ export function AppShell({ children }) {
 
   const [collapsed, setCollapsed] = useState(initialCollapsed);
 
-  // Persist collapsed state
+  // Persist collapsed state (dual-key for backward compatibility)
   useEffect(() => {
     try {
       localStorage.setItem("ui_sidebar_collapsed", collapsed ? "1" : "0");
+      // Legacy key expected by some tests/docs: ui_sidebar_open
+      localStorage.setItem("ui_sidebar_open", collapsed ? "0" : "1");
     } catch {
       // ignore storage failures
     }
@@ -134,8 +136,8 @@ export function AppShell({ children }) {
   const isDrawerMode = viewportMode === "mobile";
 
   return (
-    <div 
-      className={clsx("shell")} 
+    <div
+      className={clsx("shell")}
       data-collapsed={collapsed ? "true" : "false"}
       data-drawer={isDrawerMode ? "true" : "false"}
       data-viewport={viewportMode}
@@ -154,7 +156,63 @@ export function AppShell({ children }) {
           role="presentation"
         />
       )}
-      
+
+      {/* Topbar occupies its own grid row (no overlap with main) */}
+      <header className="topbar" role="banner">
+        <button
+          ref={toggleBtnRef}
+          className="iconbtn"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          aria-controls="primary-sidebar"
+          onClick={toggleSidebar}
+          onKeyDown={(e) => {
+            if (e.key === " " || e.key === "Enter") {
+              e.preventDefault();
+              toggleSidebar();
+            }
+          }}
+        >
+          ☰
+        </button>
+        <div className="grow" />
+        <button
+          className="seg"
+          onClick={() => setTheme?.(theme === "light" ? "dark" : "light")}
+          aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+        >
+          {theme === "light" ? "🌙" : "☀️"}
+        </button>
+        {dummyAuth ? (
+          <span
+            aria-label="Demo mode indicator"
+            title="Demo mode: authentication is mocked"
+            style={{
+              marginLeft: 8,
+              marginRight: 8,
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "4px 8px",
+              borderRadius: 999,
+              background: "var(--color-secondary)",
+              color: "var(--color-primary)",
+              border: "1px dashed rgba(17,24,39,.2)",
+            }}
+          >
+            Demo mode
+          </span>
+        ) : null}
+        <div className="user" role="group" aria-label="User menu">
+          <span className="avatar" aria-hidden="true">
+            {user?.name?.[0] || "U"}
+          </span>
+          <span aria-label="User name">{user?.name || "Unknown"}</span>
+          <button className="seg" onClick={logout} aria-label="Logout">
+            Logout
+          </button>
+        </div>
+      </header>
+
       <aside
         id="primary-sidebar"
         ref={sidebarRef}
@@ -164,7 +222,7 @@ export function AppShell({ children }) {
       >
         <div className="brand">
           <Link to="/" aria-label="Kavia CRM Home">
-            <span className="dot" aria-hidden="true" /> 
+            <span className="dot" aria-hidden="true" />
             <span className="brand-text">Kavia CRM</span>
           </Link>
         </div>
@@ -193,66 +251,10 @@ export function AppShell({ children }) {
           ))}
         </nav>
       </aside>
-      
-      <div className="content">
-        <header className="topbar" role="banner">
-          <button
-            ref={toggleBtnRef}
-            className="iconbtn"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            aria-controls="primary-sidebar"
-            onClick={toggleSidebar}
-            onKeyDown={(e) => {
-              if (e.key === " " || e.key === "Enter") {
-                e.preventDefault();
-                toggleSidebar();
-              }
-            }}
-          >
-            ☰
-          </button>
-          <div className="grow" />
-          <button
-            className="seg"
-            onClick={() => setTheme?.(theme === "light" ? "dark" : "light")}
-            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-          >
-            {theme === "light" ? "🌙" : "☀️"}
-          </button>
-          {dummyAuth ? (
-            <span
-              aria-label="Demo mode indicator"
-              title="Demo mode: authentication is mocked"
-              style={{
-                marginLeft: 8,
-                marginRight: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                padding: "4px 8px",
-                borderRadius: 999,
-                background: "var(--color-secondary)",
-                color: "var(--color-primary)",
-                border: "1px dashed rgba(17,24,39,.2)",
-              }}
-            >
-              Demo mode
-            </span>
-          ) : null}
-          <div className="user" role="group" aria-label="User menu">
-            <span className="avatar" aria-hidden="true">
-              {user?.name?.[0] || "U"}
-            </span>
-            <span aria-label="User name">{user?.name || "Unknown"}</span>
-            <button className="seg" onClick={logout} aria-label="Logout">
-              Logout
-            </button>
-          </div>
-        </header>
-        <main className="main" role="main" tabIndex={-1}>
-          {children}
-        </main>
-      </div>
+
+      <main className="main" role="main" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   );
 }
