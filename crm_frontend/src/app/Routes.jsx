@@ -20,18 +20,17 @@ const Settings = lazy(() => import("../screens/Settings"));
 /**
  * PUBLIC_INTERFACE
  * AppRoutes declares all app routes and protected sections.
- * All routes now properly aligned with sidebar navigation:
+ * Navigation is provided via the topbar (no sidebar):
  * - /dashboard → Dashboard
- * - /customers → CustomersList (primary customer view)
- * - /customers/:id → CustomerDetailView (individual customer detail view)
+ * - /customers → CustomersList
+ * - /customers/:id → CustomerDetailView
  * - /service-requests → ServiceRequestsList
  * - /service-requests/new → ServiceRequestForm
- * - /service-requests/:id → ServiceRequestDetailView (individual SR detail view)
+ * - /service-requests/:id → ServiceRequestDetailView
  * - /omnichannel → OmniChannelInbox
  * - /complaints → ComplaintsList
- * - /complaints/:id → ComplaintDetailView (individual complaint detail view)
+ * - /complaints/:id → ComplaintDetailView
  * - /settings → Settings
- * Detail views support API and demo fallback with real-time updates via eventBus.
  */
 export function AppRoutes() {
   return (
