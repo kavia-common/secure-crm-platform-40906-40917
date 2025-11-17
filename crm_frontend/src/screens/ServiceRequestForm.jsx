@@ -22,7 +22,7 @@ const schema = z.object({
 });
 
 export default function ServiceRequestForm() {
-  const { getToken } = useAuth();
+  const { getToken, dummyAuth } = useAuth();
   const api = getApiClient(getToken);
   const toast = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -60,12 +60,54 @@ export default function ServiceRequestForm() {
         due_date: watch("dueDate") || null,
         description: watch("description"),
       };
-      // Placeholder backend route (to be implemented in S3)
-      await api.post("/service-requests", payload);
+
+      const endpointPath = "/service-requests";
+      const base = api?.defaults?.baseURL || process.env.REACT_APP_API_BASE || "/api/v1";
+      const finalUrl = `${base}${endpointPath}`;
+
+      // Defensive log for diagnostics (no secrets)
+      // eslint-disable-next-line no-console
+      console.info("[SR] POST", finalUrl, { payloadSummary: { title: payload.title, customer_id: payload.customer_id, priority: payload.priority, due_date: !!payload.due_date } });
+
+      // DEMO/DUMMY mode: short-circuit to avoid backend dependency or 404 due to proxy/base issues
+      const apiFeatureEnabled = String(process.env.REACT_APP_FEATURE_ENABLE_API || "true") === "true";
+      if (dummyAuth || !apiFeatureEnabled) {
+        // eslint-disable-next-line no-console
+        console.info("[SR] Demo mode or API disabled -> short-circuit success (no network)");
+        toast.push("Service request created", "success");
+        reset();
+        return;
+      }
+
+      // Real API call (expects backend POST /api/v1/service-requests)
+      const res = await api.post(endpointPath, payload);
+      // eslint-disable-next-line no-console
+      console.info("[SR] Response status:", res?.status);
       toast.push("Service request created", "success");
       reset();
     } catch (e) {
-      toast.push(`Failed to create: ${e?.message || "Unknown error"}`, "error");
+      const status = e?.response?.status;
+      const base = api?.defaults?.baseURL || process.env.REACT_APP_API_BASE || "/api/v1";
+      const path = "/service-requests";
+      const full = `${base}${path}`;
+      let msg;
+      if (status === 404) {
+        msg = `Endpoint not found (404) at ${full}. Check REACT_APP_API_BASE and backend route POST ${path}.`;
+      } else if (status) {
+        msg = `Server error (${status}) when calling ${full}.`;
+      } else {
+        msg = `Network error: could not reach ${full}.`;
+      }
+      // eslint-disable-next-line no-console
+      console.error("[SR] Create failed", {
+        status: e?.response?.status,
+        statusText: e?.response?.statusText,
+        baseURL: api?.defaults?.baseURL,
+        path,
+        message: e?.message,
+        responseData: e?.response?.data,
+      });
+      toast.push(msg, "error");
     }
   };
 

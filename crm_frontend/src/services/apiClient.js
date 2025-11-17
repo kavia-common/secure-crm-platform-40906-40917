@@ -319,9 +319,21 @@ export function getApiClient(getToken) {
   };
 
   instance.post = async (path, body, config) => {
+    const finalUrl = `${baseURL}${path}`;
+
+    // Log outgoing POST target for diagnostics (avoid logging secrets)
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.info("[API] POST", finalUrl);
+    }
+
+    // DEV/DEMO ONLY: short-circuit auth endpoints (no network)
     if (dummyAuth && (path === "/auth/login" || path === "/auth/logout")) {
-      // DEV/DEMO ONLY: short-circuit auth endpoints (no network)
       if (path === "/auth/login") {
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.info("[API] POST", finalUrl, "-> 200 (DEMO)");
+        }
         return {
           data: {
             access_token: "dummy-token",
@@ -331,13 +343,39 @@ export function getApiClient(getToken) {
         };
       }
       if (path === "/auth/logout") {
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.info("[API] POST", finalUrl, "-> 200 (DEMO)");
+        }
         return { data: { ok: true } };
       }
     }
-    if (postImpl === mockPost) {
-      return mockPost(path, body);
+
+    // DEMO improvement: also short-circuit SR creation to avoid backend dependency in demos
+    if (dummyAuth && path === "/service-requests") {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.info("[API] POST", finalUrl, "-> 200 (DEMO SR MOCK)");
+      }
+      return { data: { id: String(Math.floor(Math.random() * 10000)), ...body, status: "Open" } };
     }
-    return realPost(path, body, config);
+
+    // Global mock layer (API disabled)
+    if (postImpl === mockPost) {
+      const r = await mockPost(path, body);
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.info("[API] POST", finalUrl, "-> 200 (MOCK)");
+      }
+      return r;
+    }
+
+    const res = await realPost(path, body, config);
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.info("[API] POST", finalUrl, "->", res?.status);
+    }
+    return res;
   };
 
   return instance;
