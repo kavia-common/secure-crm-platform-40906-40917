@@ -59,6 +59,85 @@ function normalizeBaseUrl(input) {
   return val;
 }
 
+// Global auth hooks configured by AuthContext
+let authHooks = {
+  getAccessToken: null,
+  getRefreshToken: null,
+  onTokensUpdated: null, // (tokens) => void
+  onLogout: null, // () => void
+};
+
+let refreshPromise = null;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Configure global auth hooks used by axios interceptors for 401 handling.
+ */
+export function configureApiAuth({ getAccessToken, getRefreshToken, onTokensUpdated, onLogout }) {
+  authHooks = {
+    getAccessToken: typeof getAccessToken === "function" ? getAccessToken : null,
+    getRefreshToken: typeof getRefreshToken === "function" ? getRefreshToken : null,
+    onTokensUpdated: typeof onTokensUpdated === "function" ? onTokensUpdated : null,
+    onLogout: typeof onLogout === "function" ? onLogout : null,
+  };
+}
+
+/**
+ * Attempt to refresh tokens using the configured hooks. Concurrency-guarded and retried
+ * with exponential backoff. Uses POST /auth/refresh with 'refresh_token' query param.
+ */
+async function enqueueRefresh(baseURL) {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const backoff = [0, 200, 500, 1000];
+    const refreshToken = authHooks.getRefreshToken ? await authHooks.getRefreshToken() : null;
+    if (!refreshToken) throw new Error("No refresh token");
+
+    for (let i = 0; i < backoff.length; i++) {
+      if (backoff[i] > 0) await delay(backoff[i]);
+      try {
+        // Use a clean axios instance to avoid interceptors recursion
+        const client = axios.create({
+          baseURL,
+          withCredentials: true,
+          headers: { "Content-Type": "application/json" },
+          timeout: Number.parseInt(process.env.REACT_APP_API_TIMEOUT_MS || "15000", 10),
+        });
+
+        const { data } = await client.post("/auth/refresh", null, {
+          params: { refresh_token: refreshToken },
+          // custom flag to prevent further refresh handling if any interceptor accidentally runs
+          skipAuthRefresh: true,
+        });
+
+        const newAccess = data?.access_token;
+        const newRefresh = data?.refresh_token;
+        if (!newAccess) throw new Error("Refresh did not return access token");
+
+        if (authHooks.onTokensUpdated) {
+          authHooks.onTokensUpdated({ access_token: newAccess, refresh_token: newRefresh || refreshToken });
+        }
+        return { access: newAccess, refresh: newRefresh || refreshToken };
+      } catch (e) {
+        if (i === backoff.length - 1) throw e;
+        // continue loop to retry
+      }
+    }
+    throw new Error("Refresh attempts exhausted");
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
 /**
  * PUBLIC_INTERFACE
  * getApiClient returns a configured axios instance with auth headers and interceptors.
@@ -103,36 +182,62 @@ export function getApiClient(getToken) {
   });
 
   instance.interceptors.request.use(async (config) => {
-    const token = typeof getToken === "function" ? await getToken() : null;
-    if (token) {
-      // Attach bearer token without logging it
-      config.headers.Authorization = `Bearer ${token}`;
+    // Respect caller-provided getToken, otherwise use global hook
+    const candidate =
+      typeof getToken === "function" ? await getToken() : authHooks.getAccessToken ? await authHooks.getAccessToken() : null;
+    if (candidate) {
+      config.headers.Authorization = `Bearer ${candidate}`;
     }
     return config;
   });
 
   instance.interceptors.response.use(
     (res) => res,
-    (err) => {
+    async (err) => {
+      const status = err?.response?.status;
+      const cfg = err?.config || {};
+      const original = cfg;
+
       // Robust logging for diagnostics without leaking sensitive data
       const info = {
         code: err?.code,
         message: err?.message,
-        method: err?.config?.method,
-        baseURL: err?.config?.baseURL,
-        url: err?.config?.url,
-        status: err?.response?.status,
+        method: cfg?.method,
+        baseURL: cfg?.baseURL,
+        url: cfg?.url,
+        status,
         statusText: err?.response?.statusText,
-        // Keep response data for debugging if backend returns structured error
         responseData: err?.response?.data,
       };
 
       // eslint-disable-next-line no-console
       if (info.code === "ERR_NETWORK" || !err?.response) {
         console.error("[API] Network error", info);
-      } else {
-        console.error("[API] HTTP error", info);
+        return Promise.reject(err);
       }
+
+      if (status === 401 && !cfg.skipAuthRefresh) {
+        try {
+          const tokens = await enqueueRefresh(baseURL);
+          // Retry original request with fresh token
+          original.headers = { ...(original.headers || {}), Authorization: `Bearer ${tokens.access}` };
+          original.skipAuthRefresh = true; // avoid recursive refresh on this retry
+          return instance.request(original);
+        } catch (refreshErr) {
+          // Refresh failed -> logout and bubble error
+          if (authHooks.onLogout) {
+            try {
+              await authHooks.onLogout();
+            } catch {
+              // ignore
+            }
+          }
+          return Promise.reject(refreshErr);
+        }
+      }
+
+      // eslint-disable-next-line no-console
+      console.error("[API] HTTP error", info);
       return Promise.reject(err);
     }
   );

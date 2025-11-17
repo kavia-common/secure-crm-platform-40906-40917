@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { getApiClient } from "../services/apiClient";
+import { configureApiAuth, getApiClient } from "../services/apiClient";
 
 const AuthCtx = createContext(null);
 
@@ -37,6 +37,30 @@ export function AuthProvider({ children, value }) {
 
   const getToken = useCallback(async () => token, [token]);
   const api = useMemo(() => getApiClient(getToken), [getToken]);
+
+  // Configure global API auth hooks for refresh + retry
+  useEffect(() => {
+    configureApiAuth({
+      getAccessToken: async () => token,
+      getRefreshToken: async () => refreshToken,
+      onTokensUpdated: ({ access_token, refresh_token }) => {
+        if (access_token) setToken(access_token);
+        if (typeof refresh_token !== "undefined") setRefreshToken(refresh_token);
+      },
+      onLogout: async () => {
+        try {
+          await api.post("/auth/logout");
+        } catch {
+          // ignore
+        }
+        setToken(null);
+        setRefreshToken(null);
+        setUser(null);
+        setAuthError(null);
+        if (navigate) navigate("/login", { replace: true });
+      },
+    });
+  }, [api, token, refreshToken, navigate]);
 
   // Persist changes
   useEffect(() => {
