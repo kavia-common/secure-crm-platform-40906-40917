@@ -1,5 +1,36 @@
 import { useEffect, useRef, useState } from "react";
 
+/**
+ * Lightweight in-app EventEmitter for real-time UI updates without a backend WS.
+ * PUBLIC_INTERFACE
+ */
+export const eventBus = (() => {
+  const listeners = new Map(); // event -> Set<fn>
+  return {
+    // PUBLIC_INTERFACE
+    on(event, fn) {
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event).add(fn);
+      return () => this.off(event, fn);
+    },
+    // PUBLIC_INTERFACE
+    off(event, fn) {
+      if (listeners.has(event)) listeners.get(event).delete(fn);
+    },
+    // PUBLIC_INTERFACE
+    emit(event, payload) {
+      if (!listeners.has(event)) return;
+      for (const fn of listeners.get(event)) {
+        try {
+          fn(payload);
+        } catch {
+          // ignore subscriber exceptions
+        }
+      }
+    },
+  };
+})();
+
 function computeWsBase() {
   const env = process.env.REACT_APP_WS_URL && String(process.env.REACT_APP_WS_URL).trim();
   if (env) return env;
@@ -42,13 +73,13 @@ export function useWebSocket(path, getToken) {
 
     async function startMock() {
       setStatus("mock");
-      // Emit demo messages on intervals for inbox/metrics
+      // Emit demo messages on intervals for inbox/metrics and broadcast bus events
       mockTimerRef.current = setInterval(() => {
         if (cancelled) return;
         if (path.includes("inbox")) {
           const channels = ["email", "chat", "social"];
           const ch = channels[Math.floor(Math.random() * channels.length)];
-          setLastMessage({
+          const msg = {
             type: "message",
             payload: {
               id: Math.random().toString(36).slice(2),
@@ -58,9 +89,10 @@ export function useWebSocket(path, getToken) {
               preview: "Lorem ipsum dolor sit amet…",
               ts: Date.now(),
             },
-          });
+          };
+          setLastMessage(msg);
         } else if (path.includes("metrics")) {
-          setLastMessage({
+          const kpi = {
             type: "kpi_update",
             payload: [
               { name: "Mon", value: Math.floor(Math.random() * 25) + 5 },
@@ -69,7 +101,8 @@ export function useWebSocket(path, getToken) {
               { name: "Thu", value: Math.floor(Math.random() * 25) + 5 },
               { name: "Fri", value: Math.floor(Math.random() * 25) + 5 },
             ],
-          });
+          };
+          setLastMessage(kpi);
         } else {
           setLastMessage({ type: "tick", payload: Date.now() });
         }
@@ -102,6 +135,15 @@ export function useWebSocket(path, getToken) {
           try {
             const data = JSON.parse(e.data);
             setLastMessage(data);
+            // Bridge backend events to eventBus using normalized names
+            if (data && typeof data === "object" && data.type) {
+              const t = String(data.type);
+              if (t === "sr.resolved" || t === "sr:resolved") {
+                eventBus.emit("sr:resolved", data.payload || data);
+              } else if (t === "complaint.closed" || t === "complaint:closed") {
+                eventBus.emit("complaint:closed", data.payload || data);
+              }
+            }
           } catch {
             setLastMessage(e.data);
           }

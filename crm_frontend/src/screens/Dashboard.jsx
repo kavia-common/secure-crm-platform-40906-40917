@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { LineChartCard, BarChartCard } from "../components/charts/Charts";
 import { useWebSocket } from "../services/ws";
+import { eventBus } from "../services/ws";
 
 /**
  * PUBLIC_INTERFACE
@@ -19,6 +20,7 @@ export default function Dashboard() {
     { name: "In Progress", value: 21 },
     { name: "Closed", value: 44 },
   ]);
+  const [closedToday, setClosedToday] = useState(8);
 
   // Websocket placeholder path; backend to implement in S3
   const { lastMessage } = useWebSocket("/ws/metrics", async () => null);
@@ -32,14 +34,41 @@ export default function Dashboard() {
     }
   }, [lastMessage]);
 
+  useEffect(() => {
+    const unsub1 = eventBus.on("sr:resolved", () => {
+      // Increment Closed and decrement Open/Progress if available
+      setBar((cur) => {
+        const next = cur.map((b) => ({ ...b }));
+        const idxClosed = next.findIndex((b) => b.name === "Closed");
+        if (idxClosed >= 0) next[idxClosed].value += 1;
+        const idxOpen = next.findIndex((b) => b.name === "Open");
+        if (idxOpen >= 0 && next[idxOpen].value > 0) next[idxOpen].value -= 1;
+        else {
+          const idxProg = next.findIndex((b) => b.name === "In Progress");
+          if (idxProg >= 0 && next[idxProg].value > 0) next[idxProg].value -= 1;
+        }
+        return next;
+      });
+      setClosedToday((n) => n + 1);
+    });
+    const unsub2 = eventBus.on("complaint:closed", () => {
+      // Reflect in KPI minimally (Closed Today as generic completion metric)
+      setClosedToday((n) => n + 1);
+    });
+    return () => {
+      unsub1?.();
+      unsub2?.();
+    };
+  }, []);
+
   const kpis = useMemo(
     () => [
       { label: "Open SRs", value: bar.find((b) => b.name === "Open")?.value ?? 0 },
-      { label: "Closed Today", value: 8 },
+      { label: "Closed Today", value: closedToday },
       { label: "Avg. SLA (hrs)", value: 5.4 },
       { label: "CSAT", value: "92%" },
     ],
-    [bar]
+    [bar, closedToday]
   );
 
   return (

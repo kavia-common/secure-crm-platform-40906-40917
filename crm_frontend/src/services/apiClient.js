@@ -298,10 +298,57 @@ export function getApiClient(getToken) {
   // Keep references to real axios methods
   const realGet = instance.get.bind(instance);
   const realPost = instance.post.bind(instance);
+  const realPatch = instance.patch.bind(instance);
 
   // Select underlying implementation based on API enable flag
   const getImpl = enableApi ? realGet : mockGet;
   const postImpl = enableApi ? realPost : mockPost;
+
+  // Patch mock implementation (used when API is disabled)
+  const mockPatch = async (path, body, config) => {
+    // Handle SR transition
+    const srTransMatch = /^\/service-requests\/([^/]+)\/transition$/.test(path);
+    if (srTransMatch) {
+      const id = path.split("/")[2];
+      const to = (body && body.to) || (config && config.params && config.params.status) || "resolved";
+      const resolved = String(to).toLowerCase().includes("resolv");
+      return {
+        data: {
+          id,
+          status: resolved ? "Resolved" : "Closed",
+          resolved_at: resolved ? new Date().toISOString() : undefined,
+        },
+      };
+    }
+    // Handle Complaint transition
+    const cmpTransMatch = /^\/complaints\/([^/]+)\/transition$/.test(path);
+    if (cmpTransMatch) {
+      const id = path.split("/")[2];
+      return {
+        data: {
+          id,
+          status: "Closed",
+          closed_at: new Date().toISOString(),
+        },
+      };
+    }
+    // Generic complaint patch to close
+    const cmpPatch = /^\/complaints\/([^/]+)$/.test(path);
+    if (cmpPatch && body && String(body.status || "").toLowerCase() === "closed") {
+      const id = path.split("/")[2];
+      return {
+        data: {
+          id,
+          status: "Closed",
+          closed_at: new Date().toISOString(),
+        },
+      };
+    }
+    // Fallback
+    return { data: { ok: true } };
+  };
+
+  const patchImpl = enableApi ? realPatch : mockPatch;
 
   // Wrap GET/POST to intercept auth endpoints when dummy auth is enabled.
   instance.get = async (path, configOrParams) => {
@@ -374,6 +421,33 @@ export function getApiClient(getToken) {
     if (process.env.NODE_ENV !== "production") {
       // eslint-disable-next-line no-console
       console.info("[API] POST", finalUrl, "->", res?.status);
+    }
+    return res;
+  };
+
+  // Implement PATCH wrapper with mock fallback and detailed logging
+  instance.patch = async (path, body, config) => {
+    const finalUrl = `${baseURL}${path}`;
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.info("[API] PATCH", finalUrl);
+    }
+
+    // When API is disabled, use mockPatch
+    if (patchImpl === mockPatch) {
+      const r = await mockPatch(path, body, config);
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.info("[API] PATCH", finalUrl, "-> 200 (MOCK)");
+      }
+      return r;
+    }
+
+    // Real API
+    const res = await realPatch(path, body, config);
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.info("[API] PATCH", finalUrl, "->", res?.status);
     }
     return res;
   };
@@ -457,4 +531,42 @@ function mockComplaints() {
     status: statuses[i % statuses.length],
     created_at: new Date(Date.now() - i * 86400000).toISOString().slice(0, 19).replace("T", " "),
   }));
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Transition a Service Request to a new state (e.g., 'resolved').
+ * Tries body-based API first: PATCH /service-requests/{id}/transition { to }
+ * Falls back to query param 'status' if required by backend.
+ */
+export async function transitionServiceRequest(api, id, to = "resolved") {
+  try {
+    const { data } = await api.patch(`/service-requests/${encodeURIComponent(id)}/transition`, { to });
+    return data;
+  } catch (e1) {
+    // Fallback to query param (e.g., FastAPI impl expecting ?status=Resolved)
+    const toParam = to === "resolved" ? "Resolved" : to;
+    const { data } = await api.patch(
+      `/service-requests/${encodeURIComponent(id)}/transition`,
+      null,
+      { params: { status: toParam } }
+    );
+    return data;
+  }
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Transition a Complaint to 'closed'.
+ * Tries PATCH /complaints/{id}/transition { to: 'closed' } first,
+ * then falls back to PATCH /complaints/{id} { status: 'Closed' }.
+ */
+export async function transitionComplaint(api, id) {
+  try {
+    const { data } = await api.patch(`/complaints/${encodeURIComponent(id)}/transition`, { to: "closed" });
+    return data;
+  } catch (e1) {
+    const { data } = await api.patch(`/complaints/${encodeURIComponent(id)}`, { status: "Closed" });
+    return data;
+  }
 }

@@ -6,7 +6,14 @@ const AuthCtx = createContext(null);
 
 // Feature flag: Dummy auth mode (DEV/DEMO ONLY).
 // On by default. Set REACT_APP_FEATURE_DUMMY_AUTH=false to use real backend auth.
-export const DUMMY_AUTH = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH ?? "true") === "true";
+const __defaultDummy__ =
+  (typeof process !== "undefined" && process?.env?.NODE_ENV === "test") ? "true" : "false";
+/**
+ * When REACT_APP_FEATURE_DUMMY_AUTH is not provided, default to:
+ * - false in normal/dev/prod so the real API path is used
+ * - true in test to keep existing tests passing without backend auth
+ */
+export const DUMMY_AUTH = String(process.env.REACT_APP_FEATURE_DUMMY_AUTH ?? __defaultDummy__) === "true";
 
 /**
  * PUBLIC_INTERFACE

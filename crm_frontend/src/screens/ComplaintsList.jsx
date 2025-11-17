@@ -4,6 +4,10 @@ import { Input, Select } from "../components/forms/Controls";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/feedback/Toast";
 import { StatusPill } from "../components/primitives/MetaPrimitives";
+import { Modal } from "../components/overlays/Overlays";
+import { eventBus } from "../services/ws";
+import { getApiClient, transitionComplaint } from "../services/apiClient";
+import { updateDemoComplaint } from "../services/demoStore";
 
 /**
  * PUBLIC_INTERFACE
@@ -110,6 +114,14 @@ export default function ComplaintsList() {
     }));
   }, [apiRowsRaw, dummyAuth]);
 
+  // Local rows with optimistic updates in API mode
+  const [localRows, setLocalRows] = useState([]);
+  useEffect(() => {
+    setLocalRows(dummyAuth ? demoPageRows : apiRows);
+  }, [dummyAuth, demoPageRows, apiRows]);
+
+  const [confirm, setConfirm] = useState({ open: false, id: null, title: "" });
+
   // Columns
   const columns = useMemo(
     () => [
@@ -125,6 +137,35 @@ export default function ComplaintsList() {
       { key: "escalation", header: "Escalation", sortable: true },
       { key: "priority", header: "Priority", sortable: true },
       { key: "created_at", header: "Created At", sortable: true },
+      {
+        key: "actions",
+        header: "Actions",
+        render: (_v, row) => {
+          const final = String(row.status || "").toLowerCase();
+          const disabled = final === "closed";
+          return (
+            <button
+              aria-label={`Mark complaint ${row.id} closed`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!disabled) setConfirm({ open: true, id: row.id, title: row.title || row.id });
+              }}
+              style={{
+                border: "1px solid rgba(17,24,39,.12)",
+                background: "var(--color-surface)",
+                borderRadius: 6,
+                padding: "6px 10px",
+                cursor: disabled ? "not-allowed" : "pointer",
+                opacity: disabled ? 0.6 : 1,
+                fontWeight: 700,
+              }}
+              disabled={disabled}
+            >
+              Mark Closed
+            </button>
+          );
+        },
+      },
     ],
     []
   );
@@ -134,9 +175,44 @@ export default function ComplaintsList() {
     toast.push(`Complaint detail (${id}) is not implemented yet.`, "info");
   };
 
-  const rows = dummyAuth ? demoPageRows : apiRows;
+  const rows = localRows;
   const total = dummyAuth ? demoFilteredSorted.length : apiTotal;
   const loading = dummyAuth ? false : apiLoading;
+
+  const handleClose = async () => {
+    const targetId = confirm.id;
+    if (!targetId) return;
+    setConfirm({ open: false, id: null, title: "" });
+
+    const prev = [...localRows];
+
+    try {
+      if (dummyAuth) {
+        const updated = updateDemoComplaint(targetId, {
+          status: "Closed",
+          closed_at: new Date().toISOString(),
+        });
+        setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, ...updated } : r)));
+        eventBus.emit("complaint:closed", updated || { id: targetId, status: "Closed" });
+        // Optional toast feedback
+        return;
+      }
+
+      const api = getApiClient(async () => null);
+      // Optimistic update
+      setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, status: "Closed", closed_at: new Date().toISOString() } : r)));
+
+      const data = await transitionComplaint(api, targetId);
+      setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, ...data } : r)));
+      eventBus.emit("complaint:closed", data || { id: targetId, status: "Closed" });
+    } catch (e) {
+      setLocalRows(prev);
+      const status = e?.response?.status;
+      const msg = status ? `Server error (${status})` : (e?.message || "Network error");
+      // keep toast minimal for complaints list
+      try { const toast = (await import("../components/feedback/Toast")).useToast?.(); toast?.push?.(`Failed to close complaint ${targetId}: ${msg}`, "error"); } catch {}
+    }
+  };
 
   return (
     <section aria-labelledby="complaints-title">
@@ -213,6 +289,32 @@ export default function ComplaintsList() {
       <div style={{ marginTop: 8 }}>
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
       </div>
+
+      <Modal
+        open={confirm.open}
+        onClose={() => setConfirm({ open: false, id: null, title: "" })}
+        title="Mark Complaint as Closed?"
+        footer={
+          <>
+            <button
+              aria-label="Cancel"
+              onClick={() => setConfirm({ open: false, id: null, title: "" })}
+              style={{ border: "1px solid rgba(17,24,39,.12)", padding: "6px 10px", borderRadius: 6, background: "var(--color-surface)", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+            <button
+              aria-label="Confirm mark as closed"
+              onClick={handleClose}
+              style={{ border: "none", padding: "8px 12px", borderRadius: 6, background: "var(--color-primary)", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+            >
+              Confirm
+            </button>
+          </>
+        }
+      >
+        <p>Are you sure you want to mark “{confirm.title}” as Closed?</p>
+      </Modal>
     </section>
   );
 }

@@ -5,9 +5,14 @@ import { Input, Select } from "../components/forms/Controls";
 import { Button } from "../components/primitives/Button";
 import { StatusPill } from "../components/primitives/MetaPrimitives";
 import { useAuth } from "../auth/AuthContext";
+import { Modal } from "../components/overlays/Overlays";
+import { useToast } from "../components/feedback/Toast";
+import { eventBus } from "../services/ws";
+import { getApiClient, transitionServiceRequest } from "../services/apiClient";
 import {
   getDemoServiceRequests,
   subscribeDemoServiceRequests,
+  updateDemoServiceRequest,
 } from "../services/demoStore";
 
 /**
@@ -28,7 +33,19 @@ export default function ServiceRequestsList() {
   const [statusFilter, setStatusFilter] = useState("");
   const [q, setQ] = useState("");
 
-  // Columns definition
+  const toast = useToast();
+
+  // Confirm dialog state
+  const [confirm, setConfirm] = useState({ open: false, id: null, title: "" });
+
+  // Local rows for optimistic update/rollback in API mode
+  const [localRows, setLocalRows] = useState([]);
+  useEffect(() => {
+    // Keep in sync with source rows
+    setLocalRows(dummyAuth ? demoPageRows : apiRows);
+  }, [dummyAuth, demoPageRows, apiRows]);
+
+  // Columns definition, including action column
   const columns = useMemo(
     () => [
       { key: "id", header: "ID", sortable: true },
@@ -42,6 +59,28 @@ export default function ServiceRequestsList() {
       },
       { key: "priority", header: "Priority", sortable: true },
       { key: "created_at", header: "Created At", sortable: true },
+      {
+        key: "actions",
+        header: "Actions",
+        render: (_v, row) => {
+          const final = String(row.status || "").toLowerCase();
+          const disabled = final === "resolved" || final === "closed";
+          return (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={disabled}
+              aria-label={`Mark service request ${row.id} resolved`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirm({ open: true, id: row.id, title: row.title || row.id });
+              }}
+            >
+              Mark Resolved
+            </Button>
+          );
+        },
+      },
     ],
     []
   );
@@ -124,9 +163,50 @@ export default function ServiceRequestsList() {
     navigate(`/service-requests/${encodeURIComponent(row.id)}`);
   };
 
-  const rows = dummyAuth ? demoPageRows : apiRows;
+  const rows = localRows;
   const total = dummyAuth ? demoFilteredSorted.length : apiTotal;
   const loading = dummyAuth ? false : apiLoading;
+
+  // Handle confirm resolve
+  const handleResolve = async () => {
+    const targetId = confirm.id;
+    if (!targetId) return;
+    setConfirm({ open: false, id: null, title: "" });
+
+    // Snapshot for rollback
+    const prev = [...localRows];
+
+    try {
+      if (dummyAuth) {
+        const updated = updateDemoServiceRequest(targetId, {
+          status: "Resolved",
+          resolved_at: new Date().toISOString(),
+        });
+        setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, ...updated } : r)));
+        toast.push(`Service Request ${targetId} resolved (demo)`, "success");
+        eventBus.emit("sr:resolved", { id: targetId, status: "Resolved" });
+        return;
+      }
+
+      const api = getApiClient(async () => null);
+      // Optimistic update
+      setLocalRows((rs) =>
+        rs.map((r) => (r.id === targetId ? { ...r, status: "Resolved", resolved_at: new Date().toISOString() } : r))
+      );
+
+      const data = await transitionServiceRequest(api, targetId, "resolved");
+      // Reconcile with server response if provided
+      setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, ...data } : r)));
+      toast.push(`Service Request ${targetId} marked as resolved`, "success");
+      eventBus.emit("sr:resolved", data || { id: targetId, status: "Resolved" });
+    } catch (e) {
+      // Rollback on error
+      setLocalRows(prev);
+      const status = e?.response?.status;
+      const msg = status ? `Server error (${status})` : (e?.message || "Network error");
+      toast.push(`Failed to resolve SR ${targetId}: ${msg}`, "error");
+    }
+  };
 
   return (
     <section aria-labelledby="srl-title">
@@ -191,6 +271,32 @@ export default function ServiceRequestsList() {
       <div style={{ marginTop: 8 }}>
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
       </div>
+
+      <Modal
+        open={confirm.open}
+        onClose={() => setConfirm({ open: false, id: null, title: "" })}
+        title="Mark as Resolved?"
+        footer={
+          <>
+            <button
+              aria-label="Cancel"
+              onClick={() => setConfirm({ open: false, id: null, title: "" })}
+              style={{ border: "1px solid rgba(17,24,39,.12)", padding: "6px 10px", borderRadius: 6, background: "var(--color-surface)", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+            <button
+              aria-label="Confirm mark as resolved"
+              onClick={handleResolve}
+              style={{ border: "none", padding: "8px 12px", borderRadius: 6, background: "var(--color-primary)", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+            >
+              Confirm
+            </button>
+          </>
+        }
+      >
+        <p>Are you sure you want to mark “{confirm.title}” as Resolved?</p>
+      </Modal>
     </section>
   );
 }
