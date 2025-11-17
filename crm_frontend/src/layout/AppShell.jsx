@@ -9,13 +9,15 @@ import "./appshell.css";
  * AppShell renders layout chrome: Sidebar, TopBar, main content.
  * Enhancements:
  * - Active route highlighting via NavLink isActive and aria-current
- * - Collapse/expand with persisted state (localStorage: ui_sidebar_open)
+ * - Collapse/expand with persisted state (localStorage: ui_sidebar_collapsed)
  * - Responsive mobile drawer with overlay and ESC to close
- * - Keyboard accessibility (Enter/Space for toggle, Tab navigation)
+ * - Keyboard accessibility (Enter/Space for toggle, Tab navigation, ESC closes drawer)
  * - Focus management when opening/closing drawer
  * - All menu items point to real routes matching Routes.jsx
  * - Proper ARIA attributes for screen readers
  * - Styles aligned with theme.css tokens
+ * - Data attributes for CSS targeting: data-collapsed, data-drawer
+ * - Window resize handler to update layout mode
  */
 export function AppShell({ children }) {
   const { logout, user, theme, setTheme, dummyAuth } = useAuth();
@@ -24,34 +26,56 @@ export function AppShell({ children }) {
   const toggleBtnRef = useRef(null);
   const lastFocusRef = useRef(null);
 
-  // Determine initial open state: prefer persisted value; if none, closed on mobile (<640px), open on desktop/tablet.
-  const initialOpen = useMemo(() => {
+  // Detect current viewport mode
+  const [viewportMode, setViewportMode] = useState(() => {
+    if (typeof window === "undefined") return "desktop";
+    const w = window.innerWidth;
+    if (w < 640) return "mobile";
+    if (w < 1024) return "tablet";
+    return "desktop";
+  });
+
+  // Determine initial collapsed state: prefer persisted value
+  const initialCollapsed = useMemo(() => {
     try {
-      const persisted = localStorage.getItem("ui_sidebar_open");
+      const persisted = localStorage.getItem("ui_sidebar_collapsed");
       if (persisted !== null) return persisted === "1";
-      if (typeof window !== "undefined") return window.innerWidth >= 640;
-      return true;
+      // Default: collapsed on mobile, expanded on tablet/desktop
+      return viewportMode === "mobile";
     } catch {
-      return true;
+      return false;
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [open, setOpen] = useState(initialOpen);
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
 
-  // Persist open state
+  // Persist collapsed state
   useEffect(() => {
     try {
-      localStorage.setItem("ui_sidebar_open", open ? "1" : "0");
+      localStorage.setItem("ui_sidebar_collapsed", collapsed ? "1" : "0");
     } catch {
       // ignore storage failures
     }
-  }, [open]);
+  }, [collapsed]);
 
-  // Close the mobile drawer on route change (mobile: <640px)
+  // Handle window resize to update viewport mode
   useEffect(() => {
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
-    if (open && isMobile) {
-      setOpen(false);
+    const handleResize = () => {
+      const w = window.innerWidth;
+      let mode = "desktop";
+      if (w < 640) mode = "mobile";
+      else if (w < 1024) mode = "tablet";
+      setViewportMode(mode);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Close the mobile drawer on route change (mobile only)
+  useEffect(() => {
+    if (viewportMode === "mobile" && !collapsed) {
+      setCollapsed(true);
       // Return focus to toggle button after closing on mobile
       if (toggleBtnRef.current) {
         setTimeout(() => toggleBtnRef.current?.focus(), 100);
@@ -59,11 +83,11 @@ export function AppShell({ children }) {
     }
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ESC to close (mainly for mobile drawer)
+  // ESC to close drawer (mainly for mobile)
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape" && open) {
-        setOpen(false);
+      if (e.key === "Escape" && !collapsed && viewportMode === "mobile") {
+        setCollapsed(true);
         // Return focus to toggle button
         if (toggleBtnRef.current) {
           toggleBtnRef.current.focus();
@@ -72,25 +96,23 @@ export function AppShell({ children }) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [collapsed, viewportMode]);
 
   const toggleSidebar = () => {
-    const newOpen = !open;
-    setOpen(newOpen);
+    const newCollapsed = !collapsed;
+    setCollapsed(newCollapsed);
     
     // Focus management
-    if (newOpen) {
-      // When opening, store the current focus and move focus to sidebar
+    if (!newCollapsed && viewportMode === "mobile") {
+      // When opening on mobile, store the current focus and move focus to first nav link
       lastFocusRef.current = document.activeElement;
       setTimeout(() => {
         const firstNavLink = sidebarRef.current?.querySelector('a[href]');
         if (firstNavLink) firstNavLink.focus();
       }, 100);
-    } else {
+    } else if (newCollapsed && toggleBtnRef.current) {
       // When closing, return focus to toggle button
-      if (toggleBtnRef.current) {
-        toggleBtnRef.current.focus();
-      }
+      toggleBtnRef.current.focus();
     }
   };
 
@@ -108,30 +130,42 @@ export function AppShell({ children }) {
     []
   );
 
+  // Determine if drawer mode (mobile with overlay)
+  const isDrawerMode = viewportMode === "mobile";
+
   return (
-    <div className={clsx("shell", open ? "sidebar-open" : "sidebar-closed")}>
+    <div 
+      className={clsx("shell")} 
+      data-collapsed={collapsed ? "true" : "false"}
+      data-drawer={isDrawerMode ? "true" : "false"}
+      data-viewport={viewportMode}
+    >
       {/* Mobile backdrop for drawer mode */}
-      <div
-        className={clsx("backdrop", open && "show")}
-        aria-hidden={!open}
-        onClick={() => {
-          setOpen(false);
-          if (toggleBtnRef.current) {
-            toggleBtnRef.current.focus();
-          }
-        }}
-        role="presentation"
-      />
+      {isDrawerMode && (
+        <div
+          className={clsx("backdrop", !collapsed && "show")}
+          aria-hidden={collapsed}
+          onClick={() => {
+            setCollapsed(true);
+            if (toggleBtnRef.current) {
+              toggleBtnRef.current.focus();
+            }
+          }}
+          role="presentation"
+        />
+      )}
+      
       <aside
         id="primary-sidebar"
         ref={sidebarRef}
-        className={clsx("sidebar", open ? "open" : "closed")}
+        className={clsx("sidebar")}
         aria-label="Primary navigation"
-        aria-hidden={!open ? "true" : "false"}
+        aria-hidden={isDrawerMode && collapsed ? "true" : "false"}
       >
         <div className="brand">
           <Link to="/" aria-label="Kavia CRM Home">
-            <span className="dot" aria-hidden="true" /> Kavia CRM
+            <span className="dot" aria-hidden="true" /> 
+            <span className="brand-text">Kavia CRM</span>
           </Link>
         </div>
         <nav aria-label="Main Navigation" role="navigation">
@@ -146,6 +180,7 @@ export function AppShell({ children }) {
               aria-current={({ isActive }) => (isActive ? "page" : undefined)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
                   e.currentTarget.click();
                 }
               }}
@@ -158,13 +193,14 @@ export function AppShell({ children }) {
           ))}
         </nav>
       </aside>
+      
       <div className="content">
         <header className="topbar" role="banner">
           <button
             ref={toggleBtnRef}
             className="iconbtn"
-            aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-            aria-expanded={open}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
             aria-controls="primary-sidebar"
             onClick={toggleSidebar}
             onKeyDown={(e) => {

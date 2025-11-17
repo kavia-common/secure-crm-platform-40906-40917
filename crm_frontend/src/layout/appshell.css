@@ -2,6 +2,7 @@
  * AppShell Layout CSS
  * Implements a responsive sidebar layout with proper grid/flex handling
  * Breakpoints: desktop >=1024px, tablet 640-1023px, mobile <640px
+ * Uses data-attributes for state: data-collapsed, data-drawer, data-viewport
  */
 
 .shell {
@@ -12,7 +13,8 @@
   
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
-  grid-template-rows: 1fr;
+  grid-template-rows: 100vh;
+  grid-template-areas: "sidebar content";
   height: 100vh;
   width: 100vw;
   background: var(--color-background);
@@ -21,24 +23,52 @@
 }
 
 /* Collapsed state reduces sidebar width */
-.shell.sidebar-closed {
+.shell[data-collapsed="true"]:not([data-drawer="true"]) {
   grid-template-columns: var(--sidebar-w-collapsed) 1fr;
 }
 
-/* Sidebar: fixed column in desktop, drawer in mobile */
+/* Drawer mode (mobile): single column layout */
+.shell[data-drawer="true"] {
+  grid-template-columns: 1fr;
+  grid-template-areas: "content";
+}
+
+/* Sidebar: fixed column in desktop/tablet, drawer in mobile */
 .sidebar {
-  grid-column: 1;
-  grid-row: 1;
+  grid-area: sidebar;
   background: var(--color-surface);
   border-right: 1px solid rgba(17, 24, 39, 0.08);
   padding: var(--space-6) var(--space-4);
   box-shadow: var(--shadow-sm);
   overflow-x: hidden;
   overflow-y: auto;
-  transition: transform 0.25s ease-in-out;
+  transition: transform 0.25s ease-in-out, width 0.25s ease-in-out;
   z-index: 20;
-  width: var(--sidebar-w);
+  width: 100%;
   max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Drawer mode: fixed positioning with transform */
+.shell[data-drawer="true"] .sidebar {
+  position: fixed;
+  z-index: 40; /* Above backdrop (30), below nothing */
+  height: 100vh;
+  width: var(--sidebar-w);
+  max-width: 85vw;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-100%);
+  box-shadow: none;
+  grid-area: unset;
+}
+
+.shell[data-drawer="true"][data-collapsed="false"] .sidebar {
+  transform: translateX(0);
+  box-shadow: var(--shadow-lg);
 }
 
 /* Brand header */
@@ -50,6 +80,7 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 32px;
+  flex-shrink: 0;
 }
 
 .brand a {
@@ -59,6 +90,7 @@
   transition: opacity 0.2s ease;
   text-decoration: none;
   color: inherit;
+  width: 100%;
 }
 
 .brand a:hover {
@@ -80,11 +112,29 @@
   flex-shrink: 0;
 }
 
+.brand .brand-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hide brand text when collapsed (not in drawer mode) */
+.shell[data-collapsed="true"]:not([data-drawer="true"]) .brand .brand-text {
+  display: none;
+}
+
+.shell[data-collapsed="true"]:not([data-drawer="true"]) .brand a {
+  justify-content: center;
+}
+
 /* Navigation */
 nav[role="navigation"] {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .nav {
@@ -100,6 +150,7 @@ nav[role="navigation"] {
   transition: background 0.15s ease, box-shadow 0.15s ease;
   text-decoration: none;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .nav .icon {
@@ -134,28 +185,28 @@ nav[role="navigation"] {
   font-weight: 700;
 }
 
-/* Collapsed sidebar: hide labels */
-.shell.sidebar-closed .nav .label {
+/* Collapsed sidebar: hide labels (not in drawer mode) */
+.shell[data-collapsed="true"]:not([data-drawer="true"]) .nav .label {
   display: none;
 }
 
-.shell.sidebar-closed .brand a {
+.shell[data-collapsed="true"]:not([data-drawer="true"]) .nav {
   justify-content: center;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
 }
 
-.shell.sidebar-closed .brand a > span:not(.dot) {
-  display: none;
-}
-
-/* Content area: occupies second grid column */
+/* Content area: occupies second grid column or full width in drawer mode */
 .content {
-  grid-column: 2;
-  grid-row: 1;
+  grid-area: content;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-width: 0; /* Allow content to shrink */
+  min-width: 0; /* Critical: allow content to shrink */
+  min-height: 0; /* Critical: prevent overflow */
   background: var(--color-background);
+  position: relative;
+  z-index: 10;
 }
 
 /* Top bar */
@@ -168,7 +219,7 @@ nav[role="navigation"] {
   border-bottom: 1px solid rgba(17, 24, 39, 0.08);
   height: var(--topbar-h);
   flex-shrink: 0;
-  z-index: 10;
+  z-index: 15; /* Above main content but below drawer */
   position: relative;
 }
 
@@ -179,11 +230,12 @@ nav[role="navigation"] {
   border-radius: var(--radius-sm);
   padding: 6px 10px;
   cursor: pointer;
-  transition: box-shadow 0.15s ease, background 0.15s ease;
+  transition: box-shadow 0.15s ease, background 0.15s ease, transform 0.1s ease;
   font-size: 16px;
   color: var(--color-text);
   line-height: 1;
   min-height: 36px;
+  font-family: inherit;
 }
 
 .iconbtn:hover,
@@ -235,69 +287,46 @@ nav[role="navigation"] {
   position: relative;
   min-width: 0; /* Critical: allows content to shrink below intrinsic width */
   min-height: 0; /* Prevents overflow in flex container */
+  background: var(--color-background);
 }
 
 .main:focus {
   outline: none;
 }
 
-/* Backdrop for mobile drawer (hidden on desktop) */
+/* Backdrop for mobile drawer */
 .backdrop {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0);
-  z-index: 15;
-  transition: background 0.25s ease;
+  z-index: 30; /* Below drawer (40), above content (10-15) */
+  transition: background 0.25s ease, opacity 0.25s ease;
   pointer-events: none;
+  opacity: 0;
 }
 
-.backdrop.show {
-  background: rgba(0, 0, 0, 0.4);
+.shell[data-drawer="true"] .backdrop {
+  display: block;
+}
+
+.shell[data-drawer="true"] .backdrop.show {
+  background: rgba(0, 0, 0, 0.5);
   pointer-events: auto;
+  opacity: 1;
 }
 
 /* 
  * RESPONSIVE BREAKPOINTS
- * Desktop: >=1024px - persistent sidebar
- * Tablet: 640-1023px - collapsible sidebar
  * Mobile: <640px - drawer overlay
+ * Tablet: 640-1023px - collapsible inline sidebar
+ * Desktop: >=1024px - persistent sidebar
  */
 
 /* Mobile: <640px - drawer mode with overlay */
 @media (max-width: 639px) {
   .shell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: fixed;
-    z-index: 40; /* Above backdrop */
-    height: 100vh;
-    width: var(--sidebar-w);
-    left: 0;
-    top: 0;
-    bottom: 0;
-    transform: translateX(-100%);
-    box-shadow: none;
-  }
-
-  .sidebar.open {
-    transform: translateX(0);
-    box-shadow: var(--shadow-2xl);
-  }
-
-  .backdrop {
-    display: block;
-  }
-
-  .content {
-    grid-column: 1;
-  }
-
-  /* No collapsed state in mobile - always full width when open */
-  .shell.sidebar-closed .sidebar {
-    transform: translateX(-100%);
+    --sidebar-w: 280px;
   }
 }
 
@@ -307,24 +336,6 @@ nav[role="navigation"] {
     --sidebar-w: 240px;
     --sidebar-w-collapsed: 64px;
   }
-
-  .shell.sidebar-open {
-    grid-template-columns: var(--sidebar-w) 1fr;
-  }
-
-  .shell.sidebar-closed {
-    grid-template-columns: var(--sidebar-w-collapsed) 1fr;
-  }
-
-  .sidebar {
-    position: relative;
-    height: 100vh;
-  }
-
-  /* No backdrop in tablet mode */
-  .backdrop {
-    display: none;
-  }
 }
 
 /* Desktop: >=1024px - persistent sidebar */
@@ -332,24 +343,6 @@ nav[role="navigation"] {
   .shell {
     --sidebar-w: 260px;
     --sidebar-w-collapsed: 64px;
-  }
-
-  .shell.sidebar-open {
-    grid-template-columns: var(--sidebar-w) 1fr;
-  }
-
-  .shell.sidebar-closed {
-    grid-template-columns: var(--sidebar-w-collapsed) 1fr;
-  }
-
-  .sidebar {
-    position: relative;
-    height: 100vh;
-  }
-
-  /* No backdrop in desktop mode */
-  .backdrop {
-    display: none;
   }
 }
 
@@ -384,8 +377,14 @@ nav[role="navigation"] {
 /* Print styles */
 @media print {
   .sidebar,
-  .topbar {
-    display: none;
+  .topbar,
+  .backdrop {
+    display: none !important;
+  }
+
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-areas: "content";
   }
 
   .content {
@@ -394,5 +393,15 @@ nav[role="navigation"] {
 
   .main {
     padding: 0;
+    overflow: visible;
   }
+}
+
+/* Shadow override for better depth perception */
+:root {
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="dark"] {
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
 }
