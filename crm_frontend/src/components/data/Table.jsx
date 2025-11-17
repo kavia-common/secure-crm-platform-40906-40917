@@ -94,13 +94,16 @@ export function useServerTable({ path, page, pageSize, sort, filter }) {
  * PUBLIC_INTERFACE
  * DataTable: simple table with clickable header sorting and server-mode hooks.
  */
-export function DataTable({ columns, rows, sort, onSortChange, loading, emptyText = "No data" }) {
+export function DataTable({ columns, rows, sort, onSortChange, loading, emptyText = "No data", onRowClick }) {
   const handleSort = (key) => {
     if (!onSortChange) return;
     const isSame = sort?.key === key;
     const dir = isSame && sort?.dir === "asc" ? "desc" : "asc";
     onSortChange({ key, dir });
   };
+
+  const clickable = typeof onRowClick === "function";
+
   return (
     <div style={{ border: "1px solid rgba(17,24,39,.12)", borderRadius: 10, overflow: "hidden", background: "var(--color-surface)" }}>
       <table role="grid" style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -137,15 +140,37 @@ export function DataTable({ columns, rows, sort, onSortChange, loading, emptyTex
               </td>
             </tr>
           ) : rows?.length ? (
-            rows.map((r, idx) => (
-              <tr key={r.id || idx} style={{ borderBottom: "1px solid rgba(17,24,39,.06)" }}>
-                {columns.map((c) => (
-                  <td key={c.key} style={{ padding: "10px 12px" }}>
-                    {typeof c.render === "function" ? c.render(r[c.key], r) : r[c.key]}
-                  </td>
-                ))}
-              </tr>
-            ))
+            rows.map((r, idx) => {
+              const key = r.id || idx;
+              const rowHandlers = clickable
+                ? {
+                    onClick: () => onRowClick(r),
+                    onKeyDown: (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRowClick(r);
+                      }
+                    },
+                    tabIndex: 0,
+                    role: "row",
+                    style: {
+                      borderBottom: "1px solid rgba(17,24,39,.06)",
+                      cursor: "pointer",
+                    },
+                    "aria-label": `Row ${String(r.id || idx)}`,
+                  }
+                : { style: { borderBottom: "1px solid rgba(17,24,39,.06)" } };
+
+              return (
+                <tr key={key} {...rowHandlers}>
+                  {columns.map((c) => (
+                    <td key={c.key} style={{ padding: "10px 12px" }}>
+                      {typeof c.render === "function" ? c.render(r[c.key], r) : r[c.key]}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
           ) : (
             <tr>
               <td colSpan={columns.length} style={{ padding: 16, textAlign: "center", color: "rgba(17,24,39,.7)" }}>

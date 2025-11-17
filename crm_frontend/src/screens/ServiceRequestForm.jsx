@@ -8,6 +8,8 @@ import { useToast } from "../components/feedback/Toast";
 import { Modal } from "../components/overlays/Overlays";
 import { getApiClient } from "../services/apiClient";
 import { useAuth } from "../auth/AuthContext";
+import { addDemoServiceRequest } from "../services/demoStore";
+import { useNavigate } from "react-router-dom";
 
 /**
  * PUBLIC_INTERFACE
@@ -26,6 +28,7 @@ export default function ServiceRequestForm() {
   const api = getApiClient(getToken);
   const toast = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const navigate = useNavigate();
 
   const {
     register,
@@ -74,8 +77,18 @@ export default function ServiceRequestForm() {
       if (dummyAuth || !apiFeatureEnabled) {
         // eslint-disable-next-line no-console
         console.info("[SR] Demo mode or API disabled -> short-circuit success (no network)");
+        // Add to demo store so the list view can show it immediately
+        addDemoServiceRequest({
+          title: payload.title,
+          customer_id: payload.customer_id,
+          priority: payload.priority,
+          description: payload.description,
+          due_date: payload.due_date,
+        });
         toast.push("Service request created", "success");
         reset();
+        // Navigate to the list view
+        navigate("/service-requests", { replace: true });
         return;
       }
 
@@ -85,6 +98,7 @@ export default function ServiceRequestForm() {
       console.info("[SR] Response status:", res?.status);
       toast.push("Service request created", "success");
       reset();
+      try { navigate("/service-requests", { replace: true }); } catch {}
     } catch (e) {
       const status = e?.response?.status;
       const base = api?.defaults?.baseURL || process.env.REACT_APP_API_BASE || "/api/v1";
