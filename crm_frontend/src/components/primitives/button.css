@@ -1,0 +1,20 @@
+.btn {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+.btn:hover { box-shadow: var(--shadow-md); }
+.btn-secondary {
+  background: var(--color-text);
+  color: var(--color-surface);
+}
+.btn-danger { background: var(--color-error); }
+
+.btn-sm { padding: 6px 10px; font-size: 14px; }
+.btn-md { padding: 8px 12px; font-size: 15px; }
+.btn-lg { padding: 10px 16px; font-size: 16px; }
