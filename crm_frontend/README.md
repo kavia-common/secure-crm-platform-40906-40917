@@ -16,10 +16,16 @@ Create `.env` (see `.env.example`) with:
 - REACT_APP_FEATURE_ENABLE_API=true
 - REACT_APP_FEATURE_ENABLE_WS=true
 
-When `REACT_APP_FEATURE_ENABLE_API=false`, HTTP requests are served by local mocks so UI works without backend.
+When `REACT_APP_FEATURE_ENABLE_API=false`, HTTP requests are served by local mocks so UI works without backend (including auth: /auth/login, /auth/me, /auth/logout).
 When `REACT_APP_FEATURE_ENABLE_WS=false`, the WebSocket hook emits mock messages periodically.
 
 Do not commit secrets.
+
+## Login flow (frontend)
+- The login screen uses React Hook Form + Zod validation.
+- On submit it calls POST {REACT_APP_API_BASE}/auth/login with `{ username, password }` as per backend OpenAPI.
+- On success tokens are persisted in localStorage and profile is fetched from GET {REACT_APP_API_BASE}/auth/me.
+- Errors are displayed inline and the submit button shows a loading state.
 
 ## Components Overview
 

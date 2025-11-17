@@ -52,12 +52,27 @@ export function getApiClient(getToken) {
         const items = all.slice(start, start + pageSize);
         return { data: { items, total: all.length } };
       }
+      if (path === "/auth/me") {
+        return { data: { id: "u1", username: "demo", email: "demo@example.com", roles: ["user"] } };
+      }
       // Fallback mock
       return { data: { items: [], total: 0 } };
     };
     instance.post = async (path, body) => {
       if (path === "/service-requests") {
         return { data: { id: String(Math.floor(Math.random() * 10000)), ...body, status: "Open" } };
+      }
+      if (path === "/auth/login") {
+        return {
+          data: {
+            access_token: btoa(`mock.${Date.now()}`),
+            refresh_token: btoa(`refresh.${Date.now()}`),
+            token_type: "bearer",
+          },
+        };
+      }
+      if (path === "/auth/logout") {
+        return { data: { ok: true } };
       }
       return { data: { ok: true } };
     };
