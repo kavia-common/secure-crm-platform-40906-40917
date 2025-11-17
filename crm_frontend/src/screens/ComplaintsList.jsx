@@ -1,25 +1,23 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, Pagination, useServerTable } from "../components/data/Table";
 import { Input, Select } from "../components/forms/Controls";
-import { useAuth } from "../auth/AuthContext";
-import { useToast } from "../components/feedback/Toast";
 import { StatusPill } from "../components/primitives/MetaPrimitives";
 import { Modal } from "../components/overlays/Overlays";
 import { eventBus } from "../services/ws";
 import { getApiClient, transitionComplaint } from "../services/apiClient";
-import { updateDemoComplaint } from "../services/demoStore";
+import { shouldUseFallback } from "../services/runtimeFlags";
 
 /**
  * PUBLIC_INTERFACE
- * ComplaintsList: demo-mode complaints listing with search/status/priority filters and sorting.
- * Falls back to API GET /complaints when not in demo mode.
- * Row click shows a toast (detail route to be implemented).
+ * ComplaintsList: complaints listing with search/status/severity filters and sorting.
+ * - Uses server API when available.
+ * - Silently falls back to demo store when backend is unavailable or returns 404.
+ * - Caches probe result so subsequent loads do not call the real endpoint again this session.
+ * - No demo indicators shown in UI.
  */
 export default function ComplaintsList() {
   const navigate = useNavigate();
-  const { dummyAuth } = useAuth();
-  const toast = useToast();
 
   // UI state
   const [page, setPage] = useState(1);
@@ -28,83 +26,24 @@ export default function ComplaintsList() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
+  const [reloadTick, setReloadTick] = useState(0); // used to trigger refetch after actions
 
-  // DEMO data wiring
-  const [demoAll, setDemoAll] = useState([]);
-
-  useEffect(() => {
-    if (!dummyAuth) return;
-    import("../services/demoStore")
-      .then(({ getDemoComplaints, subscribeDemoComplaints }) => {
-        setDemoAll(getDemoComplaints());
-        const unsub = subscribeDemoComplaints(() => setDemoAll(getDemoComplaints()));
-        return unsub;
-      })
-      .catch(() => {});
-  }, [dummyAuth]);
-
-  const demoFilteredSorted = useMemo(() => {
-    if (!dummyAuth) return [];
-    let rows = Array.isArray(demoAll) ? [...demoAll] : [];
-    if (q) {
-      const term = q.toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          String(r.id || "").toLowerCase().includes(term) ||
-          String(r.title || "").toLowerCase().includes(term) ||
-          String(r.customer || "").toLowerCase().includes(term)
-      );
-    }
-    if (status) {
-      rows = rows.filter((r) => String(r.status || "") === String(status));
-    }
-    if (priority) {
-      rows = rows.filter((r) => String(r.priority || "") === String(priority));
-    }
-    if (sort?.key) {
-      const { key, dir } = sort;
-      rows.sort((a, b) => {
-        let av = a[key];
-        let bv = b[key];
-        if (key === "created_at") {
-          av = new Date(av || 0).getTime();
-          bv = new Date(bv || 0).getTime();
-        } else {
-          av = typeof av === "string" ? av.toLowerCase() : av;
-          bv = typeof bv === "string" ? bv.toLowerCase() : bv;
-        }
-        if (av < bv) return dir === "asc" ? -1 : 1;
-        if (av > bv) return dir === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-    return rows;
-  }, [dummyAuth, demoAll, q, status, priority, sort]);
-
-  const demoPageRows = useMemo(() => {
-    if (!dummyAuth) return [];
-    const start = (page - 1) * pageSize;
-    return demoFilteredSorted.slice(start, start + pageSize);
-  }, [dummyAuth, demoFilteredSorted, page, pageSize]);
-
-  // API mode
-  const { rows: apiRowsRaw, total: apiTotal, loading: apiLoading, error: apiError } = useServerTable({
+  // Server table with transparent fallback and probe caching
+  const {
+    rows: apiRowsRaw,
+    total,
+    loading,
+  } = useServerTable({
     path: "/complaints",
     page,
     pageSize,
     sort,
-    filter: { status: status || undefined, severity: priority || undefined },
+    // severity maps to backend param, while priority is the UI term
+    filter: { q: q || undefined, status: status || undefined, severity: priority || undefined, _t: reloadTick },
+    fallbackKey: "complaints",
   });
 
-  useEffect(() => {
-    if (!dummyAuth && apiError) {
-      const base = process.env.REACT_APP_API_BASE || "/api/v1";
-      toast.push(`Failed to load complaints from ${base}/complaints: ${apiError}`, "error");
-    }
-  }, [dummyAuth, apiError, toast]);
-
-  const apiRows = useMemo(() => {
-    if (dummyAuth) return [];
+  const rows = useMemo(() => {
     return (apiRowsRaw || []).map((r, i) => ({
       id: r.id || String(i + 1),
       title: r.title || r.category || `Complaint #${i + 1}`,
@@ -114,15 +53,7 @@ export default function ComplaintsList() {
       priority: r.priority || r.severity || "",
       created_at: r.created_at || r.createdAt || "",
     }));
-  }, [apiRowsRaw, dummyAuth]);
-
-  // Local rows with optimistic updates in API mode
-  const [localRows, setLocalRows] = useState([]);
-  useEffect(() => {
-    setLocalRows(dummyAuth ? demoPageRows : apiRows);
-  }, [dummyAuth, demoPageRows, apiRows]);
-
-  const [confirm, setConfirm] = useState({ open: false, id: null, title: "" });
+  }, [apiRowsRaw]);
 
   // Columns
   const columns = useMemo(
@@ -172,47 +103,38 @@ export default function ComplaintsList() {
     []
   );
 
+  const [confirm, setConfirm] = useState({ open: false, id: null, title: "" });
+
   const handleRowClick = (row) => {
     if (!row?.id) return;
     navigate(`/complaints/${encodeURIComponent(row.id)}`);
   };
-
-  const rows = localRows;
-  const total = dummyAuth ? demoFilteredSorted.length : apiTotal;
-  const loading = dummyAuth ? false : apiLoading;
 
   const handleClose = async () => {
     const targetId = confirm.id;
     if (!targetId) return;
     setConfirm({ open: false, id: null, title: "" });
 
-    const prev = [...localRows];
-
     try {
-      if (dummyAuth) {
-        const updated = updateDemoComplaint(targetId, {
+      // If resource is unavailable this session, update demo store directly
+      if (shouldUseFallback("complaints")) {
+        const { updateDemoComplaint } = await import("../services/demoStore");
+        const updated = updateDemoComplaint(String(targetId), {
           status: "Closed",
           closed_at: new Date().toISOString(),
         });
-        setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, ...updated } : r)));
         eventBus.emit("complaint:closed", updated || { id: targetId, status: "Closed" });
-        // Optional toast feedback
+        setReloadTick((x) => x + 1);
         return;
       }
 
+      // Else call real API (with built-in mocks if API disabled)
       const api = getApiClient(async () => null);
-      // Optimistic update
-      setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, status: "Closed", closed_at: new Date().toISOString() } : r)));
-
       const data = await transitionComplaint(api, targetId);
-      setLocalRows((rs) => rs.map((r) => (r.id === targetId ? { ...r, ...data } : r)));
       eventBus.emit("complaint:closed", data || { id: targetId, status: "Closed" });
-    } catch (e) {
-      setLocalRows(prev);
-      const status = e?.response?.status;
-      const msg = status ? `Server error (${status})` : (e?.message || "Network error");
-      // keep toast minimal for complaints list
-      try { const toast = (await import("../components/feedback/Toast")).useToast?.(); toast?.push?.(`Failed to close complaint ${targetId}: ${msg}`, "error"); } catch {}
+      setReloadTick((x) => x + 1);
+    } catch {
+      // Suppress toasts per silent fallback requirement
     }
   };
 
@@ -286,10 +208,10 @@ export default function ComplaintsList() {
         loading={loading}
         emptyText={loading ? "Loading…" : "No complaints"}
         onRowClick={handleRowClick}
-      />
+    />
 
       <div style={{ marginTop: 8 }}>
-        <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+        <Pagination page={page} pageSize={pageSize} total={total || 0} onPageChange={setPage} />
       </div>
 
       <Modal

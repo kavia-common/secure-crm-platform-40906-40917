@@ -41,6 +41,14 @@ export function getResourceAvailability(resourceKey) {
 
 /**
  * PUBLIC_INTERFACE
+ * Returns true if the resource is explicitly marked as unavailable.
+ */
+export function isResourceUnavailable(resourceKey) {
+  return getResourceAvailability(resourceKey) === "unavailable";
+}
+
+/**
+ * PUBLIC_INTERFACE
  * Mark a given resourceKey as unavailable for the remainder of the session.
  */
 export function markResourceUnavailable(resourceKey) {
